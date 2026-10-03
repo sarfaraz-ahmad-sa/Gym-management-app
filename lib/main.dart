@@ -1,46 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'theme.dart';
-import 'state/app_state.dart';
-import 'screens/root_nav.dart';
-import 'screens/onboarding_screen.dart';
+import 'package:fitguide/services/auth_service.dart';
+import 'package:fitguide/screens/login_screen.dart';
+import 'package:fitguide/screens/admin_dashboard.dart';
+
 
 void main() {
-  runApp(const FitGuideApp());
+  runApp(const MyApp());
 }
 
-class FitGuideApp extends StatelessWidget {
-  const FitGuideApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => AppState()..init(),
+      create: (_) => AuthService(),
       child: MaterialApp(
-        title: 'FitGuide',
+        title: 'Gym Management',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.dark(),
-        home: const _Gate(),
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          useMaterial3: true,
+        ),
+        home: const AuthWrapper(),
       ),
     );
   }
 }
 
-/// Shows onboarding until a profile is set, then the main app.
-class _Gate extends StatelessWidget {
-  const _Gate();
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    if (!state.loaded) {
+    final auth = context.watch<AuthService>();
+    if (auth.isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    if (!state.hasProfile) {
-      return const OnboardingScreen();
+    if (auth.isLoggedIn) {
+      // Admin role check? For now assume admin.
+      return const AdminDashboard();
     }
-    return const RootNav();
+    return const LoginScreen();
   }
 }
