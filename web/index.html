@@ -1,46 +1,29 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
-
   <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
-
-  <!-- iOS meta tags & icons -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="FitGuide Pro — members, attendance, memberships and payments, all in one gym management workspace.">
+  <meta name="theme-color" content="#1a73e8">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="fitguide">
+  <meta name="apple-mobile-web-app-title" content="FitGuide Pro">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>fitguide</title>
+  <link rel="icon" type="image/png" href="favicon.png">
   <link rel="manifest" href="manifest.json">
+  <title>FitGuide Pro | Your club workspace</title>
+  <style>
+    html,body {margin:0;background:#f6f8fc;font-family:Arial,sans-serif}
+    #loading {position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;color:#174ea6}
+    .mark {background:#1a73e8;color:white;font-weight:bold;font-size:28px;padding:20px;border-radius:24px}
+    .bar {height:3px;width:110px;background:#d2e3fc;border-radius:4px;overflow:hidden}
+    .bar:after {content:'';display:block;width:45px;height:3px;background:#1a73e8;animation:load 1s infinite alternate}
+    @keyframes load {to {transform:translateX(65px)}}
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <div id="loading" aria-label="Loading FitGuide"><div class="mark">FG</div><div>Opening your workspace…</div><div class="bar"></div></div>
+  <script>window.addEventListener('flutter-first-frame',()=>document.getElementById('loading')?.remove());</script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

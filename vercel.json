@@ -1,0 +1,54 @@
+{
+  "framework": null,
+  "buildCommand": "bash scripts/vercel-build.sh",
+  "outputDirectory": "build/web",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cross-Origin-Opener-Policy",
+          "value": "same-origin"
+        },
+        {
+          "key": "Cross-Origin-Embedder-Policy",
+          "value": "require-corp"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    },
+    {
+      "source": "/sqlite3.wasm",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/wasm"
+        }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/((?!api(?:/|$)|.*\\.).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "installCommand": "npm ci",
+  "functions": {
+    "api/gym.js": {
+      "maxDuration": 60
+    }
+  }
+}

@@ -1,140 +1,274 @@
 import 'package:flutter/material.dart';
-import '../models/attendance.dart';
-import '../services/db_service.dart';
+import 'package:provider/provider.dart';
+import '../core/format.dart';
+import '../core/gym_store.dart';
+import '../core/theme.dart';
+import '../widgets/common.dart';
+import '../widgets/record_editor.dart';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
-
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
 }
 
 class _AttendanceScreenState extends State<AttendanceScreen> {
-  late Future<List<Attendance>> _attendanceFuture;
-  final DatabaseService _db = DatabaseService.instance;
-
-  @override
-  void initState() {
-    super.initState();
-    _refresh();
-  }
-
-  void _refresh() {
-    setState(() {
-      _attendanceFuture = _db.getAllAttendance();
-    });
-  }
-
-  void _addAttendance() {
-    // TODO: Implement add attendance dialog (check-in)
-  }
-
-  void _checkOut(Attendance attendance) async {
-    attendance.checkOut = DateTime.now();
-    await _db.updateAttendance(attendance);
-    _refresh();
-  }
-
-  void _deleteAttendance(int id) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Attendance'),
-        content: const Text('Are you sure you want to delete this attendance record?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      await _db.deleteAttendance(id);
-      _refresh();
+  String _query = '', _filter = 'today';
+  DateTime? _date;
+  int _limit = 30;
+  Future<void> _act(Future<void> Function() action, String message) async {
+    try {
+      await action();
+      if (mounted) toast(context, message);
+    } catch (e) {
+      if (mounted) toast(context, friendlyError(e));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: FutureBuilder<List<Attendance>>(
-        future: _attendanceFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          final attendanceList = snapshot.data!;
-          if (attendanceList.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+    final store = context.watch<GymStore>();
+    final today = dateOnly(DateTime.now());
+    final rows =
+        store.rows('attendance').where((r) {
+          final date = dateOnly(asDate(r['check_in'])!);
+          return (_filter != 'today' || date == today) &&
+              (_filter != 'inside' || r['check_out'] == null) &&
+              (_date == null || date == _date) &&
+              store
+                  .label('members', r['member_id'])
+                  .toLowerCase()
+                  .contains(_query.toLowerCase());
+        }).toList()..sort(
+          (a, b) => (b['check_in'] as int).compareTo(a['check_in'] as int),
+        );
+    final todayCount = store
+        .rows('attendance')
+        .where((r) => dateOnly(asDate(r['check_in'])!) == today)
+        .map((r) => r['member_id'])
+        .toSet()
+        .length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        PageHeading(
+          title: 'Attendance',
+          subtitle:
+              'A smooth check-in. A better workout. Every visit accounted for.',
+          action: FilledButton.icon(
+            onPressed: () async {
+              final id = await chooseReference(
+                context,
+                'member to check in',
+                store.rows('members').where(store.eligible).toList(),
+              );
+              if (id != null) {
+                _act(() => store.checkIn(id), 'Member checked in');
+              }
+            },
+            icon: const Icon(Icons.login),
+            label: const Text('Check in member'),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: [
+            _stat(
+              'Checked in today',
+              '$todayCount',
+              Icons.event_available_outlined,
+              AppTheme.blue,
+            ),
+            _stat(
+              'On the gym floor',
+              '${store.openVisits.length}',
+              Icons.sensors,
+              AppTheme.green,
+            ),
+            _stat(
+              'All-time visits',
+              '${store.rows('attendance').length}',
+              Icons.history,
+              const Color(0xFF9334E6),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        SectionCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 12,
+                runSpacing: 14,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Icon(Icons.calendar_today_outlined, size: 80, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  const Text('No attendance records yet'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _addAttendance,
-                    child: const Text('Check In First Member'),
+                  SizedBox(
+                    width: MediaQuery.sizeOf(context).width < 600
+                        ? double.infinity
+                        : 290,
+                    child: TextField(
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'Search member name',
+                      ),
+                      onChanged: (v) => setState(() {
+                        _query = v;
+                        _limit = 30;
+                      }),
+                    ),
                   ),
+                  ...['today', 'inside', 'all'].map(
+                    (f) => ChoiceChip(
+                      label: Text(
+                        f == 'inside' ? 'Currently inside' : titleCase(f),
+                      ),
+                      selected: _filter == f,
+                      onSelected: (_) => setState(() {
+                        _filter = f;
+                        _date = null;
+                        _limit = 30;
+                      }),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final chosen = await showDatePicker(
+                        context: context,
+                        initialDate: _date ?? today,
+                        firstDate: DateTime(1970),
+                        lastDate: today,
+                      );
+                      if (chosen != null) {
+                        setState(() {
+                          _date = chosen;
+                          _filter = 'all';
+                          _limit = 30;
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.calendar_today_outlined, size: 17),
+                    label: Text(
+                      _date == null
+                          ? 'Choose date'
+                          : dateLabel(_date!.millisecondsSinceEpoch),
+                    ),
+                  ),
+                  if (_date != null)
+                    IconButton(
+                      tooltip: 'Clear date filter',
+                      onPressed: () => setState(() => _date = null),
+                      icon: const Icon(Icons.close),
+                    ),
                 ],
               ),
-            );
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: attendanceList.length,
-            itemBuilder: (context, index) {
-              final attendance = attendanceList[index];
-              return Card(
-                child: ListTile(
-                  leading: CircleAvatar(
-                    child: Text(attendance.memberId.toString()),
-                  ),
-                  title: Text('Member ID: ${attendance.memberId}'),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 24),
+              if (rows.isEmpty)
+                const EmptyState(
+                  title: 'No visits in this view',
+                  message: 'Check in an active member, or choose another date.',
+                  icon: Icons.event_available_outlined,
+                )
+              else
+                ...rows.take(_limit).map((r) {
+                  final name = store.label('members', r['member_id']);
+                  final start = asDate(r['check_in'])!;
+                  final end = asDate(r['check_out']);
+                  final duration = (end ?? DateTime.now())
+                      .difference(start)
+                      .inMinutes;
+                  return Column(
                     children: [
-                      Text('Check-in: ${attendance.checkIn.toString().substring(0, 16)}'),
-                      if (attendance.checkOut != null)
-                        Text('Check-out: ${attendance.checkOut.toString().substring(0, 16)}'),
-                      if (attendance.checkOut == null)
-                        const Text('Status: Currently in gym',
-                            style: TextStyle(color: Colors.green)),
-                    ],
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (attendance.checkOut == null)
-                        IconButton(
-                          icon: const Icon(Icons.logout, color: Colors.orange),
-                          onPressed: () => _checkOut(attendance),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Row(
+                          children: [
+                            PersonAvatar(name),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    '${dateLabel(r['check_in'], 'd MMM • h:mm a')}  •  ${duration < 0 ? 0 : duration} min',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                  if (end != null)
+                                    Text(
+                                      'Out ${dateLabel(r['check_out'], 'h:mm a')}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            if (end == null)
+                              FilledButton.tonal(
+                                onPressed: () => _act(
+                                  () => store.checkOut(r['id'] as int),
+                                  'Member checked out',
+                                ),
+                                child: const Text('Check out'),
+                              )
+                            else
+                              const StatusPill('completed'),
+                          ],
                         ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _deleteAttendance(attendance.id!),
                       ),
+                      const Divider(),
                     ],
+                  );
+                }),
+              if (rows.length > _limit)
+                Center(
+                  child: TextButton(
+                    onPressed: () => setState(() => _limit += 30),
+                    child: const Text('Load more visits'),
                   ),
                 ),
-              );
-            },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addAttendance,
-        child: const Icon(Icons.add),
-      ),
+            ],
+          ),
+        ),
+      ],
     );
   }
+
+  Widget _stat(String label, String value, IconData icon, Color color) =>
+      SizedBox(
+        width: 245,
+        child: SectionCard(
+          padding: 20,
+          child: Row(
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(width: 18),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(label, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
 }

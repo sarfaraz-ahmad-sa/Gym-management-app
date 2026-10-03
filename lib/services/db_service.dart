@@ -1,491 +1,279 @@
+import 'dart:convert';
+import 'cloud_api.dart';
+import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import '../models/member.dart';
-import '../models/membership_plan.dart';
-import '../models/attendance.dart';
-import '../models/trainer.dart';
-import '../models/payment.dart';
-import '../models/inventory_item.dart';
-import '../models/workout_plan.dart';
+
+const dataTables = [
+  'membership_plans',
+  'trainers',
+  'members',
+  'attendance',
+  'fee_invoices',
+  'payments',
+  'inventory_items',
+  'workout_plans',
+  'member_workout_assignments',
+];
 
 class DatabaseService {
-  static const _dbName = 'gym_management.db';
-  static const _dbVersion = 2;
-
-  DatabaseService._privateConstructor();
-  static final DatabaseService instance = DatabaseService._privateConstructor();
-
-  static Database? _database;
-
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+  DatabaseService({
+    this.name = 'gym_management.db',
+    this.factory,
+    this.cloud,
+    this.workspaceId,
+  });
+  static final instance = DatabaseService();
+  final String name;
+  final DatabaseFactory? factory;
+  final CloudApi? cloud;
+  final String? workspaceId;
+  Map<String, String> cloudSettings = {};
+  bool get isCloud => cloud != null;
+  Future<Map<String, dynamic>> request(
+    String action, [
+    Map<String, dynamic> values = const {},
+  ]) => cloud!.call(action, {'workspaceId': workspaceId, ...values});
+  Future<List<Map<String, Object?>>> readRecords(String table) async {
+    if (!dataTables.contains(table)) throw ArgumentError('Unknown record type');
+    if (!isCloud) {
+      return (await (await database).query(
+        table,
+        orderBy: 'id DESC',
+      )).map((r) => Map<String, Object?>.from(r)).toList();
+    }
+    final result = <Map<String, Object?>>[];
+    int? before;
+    do {
+      final page = await request('records', {
+        'table': table,
+        'before': ?before,
+      });
+      result.addAll(
+        (page['rows'] as List).map((r) => Map<String, Object?>.from(r as Map)),
+      );
+      before = page['next'] as int?;
+    } while (before != null);
+    return result;
   }
 
-  Future<Database> _initDatabase() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, _dbName);
-    return openDatabase(
-      path,
-      version: _dbVersion,
-      onCreate: _onCreate,
+  Future<void> refreshSettings() async {
+    if (isCloud) {
+      cloudSettings = Map<String, String>.from(
+        (await request('workspace'))['settings'] as Map,
+      );
+    }
+  }
+
+  Future<void> setSettings(Map<String, String> values) async {
+    if (isCloud) {
+      await request('settings', {'values': values});
+      cloudSettings.addAll(values);
+    } else {
+      for (final e in values.entries) {
+        await setSetting(e.key, e.value);
+      }
+    }
+  }
+
+  Future<Database>? _opening;
+
+  Future<Database> get database => _opening ??= _open();
+
+  Future<Database> _open() async {
+    if (isCloud) {
+      throw StateError('Cloud workspaces use the authenticated API.');
+    }
+    final engine = factory ?? databaseFactory;
+    final path = name == inMemoryDatabasePath
+        ? name
+        : p.join(await engine.getDatabasesPath(), name);
+    try {
+      return await engine.openDatabase(
+        path,
+        options: OpenDatabaseOptions(
+          version: 4,
+          onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
+          onCreate: (db, _) => _schema(db),
+          onUpgrade: (db, _, _) => _schema(db),
+        ),
+      );
+    } catch (_) {
+      _opening = null;
+      rethrow;
+    }
+  }
+
+  Future<void> _schema(Database db) async {
+    for (final sql in [
+      '''CREATE TABLE IF NOT EXISTS membership_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+        description TEXT, price REAL NOT NULL, duration_days INTEGER NOT NULL,
+        features TEXT)''',
+      '''CREATE TABLE IF NOT EXISTS trainers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+        phone TEXT NOT NULL, email TEXT, specialization TEXT, hire_date INTEGER,
+        status TEXT DEFAULT 'active')''',
+      '''CREATE TABLE IF NOT EXISTS members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+        phone TEXT NOT NULL, email TEXT, address TEXT, join_date INTEGER,
+        plan_id INTEGER REFERENCES membership_plans(id), status TEXT DEFAULT 'active',
+        trainer_id INTEGER REFERENCES trainers(id), expiry_date INTEGER, goal TEXT)''',
+      '''CREATE TABLE IF NOT EXISTS attendance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL REFERENCES members(id),
+        check_in INTEGER NOT NULL, check_out INTEGER, notes TEXT)''',
+      '''CREATE TABLE IF NOT EXISTS fee_invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL REFERENCES members(id),
+        amount REAL NOT NULL, due_date INTEGER NOT NULL, period TEXT,
+        description TEXT, status TEXT NOT NULL DEFAULT 'unpaid', UNIQUE(member_id, period))''',
+      '''CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL REFERENCES members(id),
+        plan_id INTEGER REFERENCES membership_plans(id), amount REAL NOT NULL,
+        payment_date INTEGER NOT NULL, status TEXT NOT NULL,
+        payment_method TEXT, transaction_id TEXT, invoice_id INTEGER REFERENCES fee_invoices(id))''',
+      '''CREATE TABLE IF NOT EXISTS inventory_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, category TEXT NOT NULL,
+        quantity INTEGER NOT NULL, condition TEXT, purchase_price REAL,
+        purchase_date INTEGER, notes TEXT)''',
+      '''CREATE TABLE IF NOT EXISTS workout_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+        description TEXT, level TEXT, duration_weeks INTEGER)''',
+      '''CREATE TABLE IF NOT EXISTS member_workout_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL REFERENCES members(id),
+        workout_plan_id INTEGER NOT NULL REFERENCES workout_plans(id),
+        assigned_date INTEGER NOT NULL, status TEXT DEFAULT 'active')''',
+      '''CREATE TABLE IF NOT EXISTS owner_account (
+        id INTEGER PRIMARY KEY CHECK (id = 1), name TEXT NOT NULL,
+        username TEXT NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL)''',
+      '''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)''',
+      '''CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)''',
+      'CREATE INDEX IF NOT EXISTS idx_attendance_member ON attendance(member_id, check_in)',
+      'CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(payment_date, status)',
+    ]) {
+      await db.execute(sql);
+    }
+    final paymentColumns = await db.rawQuery('PRAGMA table_info(payments)');
+    if (!paymentColumns.any((c) => c['name'] == 'invoice_id')) {
+      await db.execute(
+        'ALTER TABLE payments ADD COLUMN invoice_id INTEGER REFERENCES fee_invoices(id)',
+      );
+    }
+    // Preserve existing records; only add the missing columns.
+    final columns = await db.rawQuery('PRAGMA table_info(members)');
+    for (final entry in {
+      'trainer_id': 'INTEGER REFERENCES trainers(id)',
+      'expiry_date': 'INTEGER',
+      'goal': 'TEXT',
+    }.entries) {
+      if (!columns.any((c) => c['name'] == entry.key)) {
+        await db.execute(
+          'ALTER TABLE members ADD COLUMN ${entry.key} ${entry.value}',
+        );
+      }
+    }
+    await db.rawUpdate(
+      '''UPDATE members SET expiry_date = join_date +
+      (SELECT duration_days FROM membership_plans WHERE id = members.plan_id) * 86400000
+      WHERE expiry_date IS NULL AND join_date IS NOT NULL AND plan_id IS NOT NULL''',
     );
   }
 
-  Future<void> _onCreate(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE members(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        phone TEXT NOT NULL,
-        email TEXT,
-        address TEXT,
-        join_date INTEGER,
-        plan_id INTEGER,
-        status TEXT DEFAULT 'active',
-        FOREIGN KEY (plan_id) REFERENCES membership_plans(id)
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE membership_plans(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        price REAL NOT NULL,
-        duration_days INTEGER NOT NULL,
-        features TEXT
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE attendance(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        member_id INTEGER NOT NULL,
-        check_in INTEGER NOT NULL,
-        check_out INTEGER,
-        notes TEXT,
-        FOREIGN KEY (member_id) REFERENCES members(id)
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE trainers(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        phone TEXT NOT NULL,
-        email TEXT,
-        specialization TEXT,
-        hire_date INTEGER,
-        status TEXT DEFAULT 'active'
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE payments(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        member_id INTEGER NOT NULL,
-        plan_id INTEGER,
-        amount REAL NOT NULL,
-        payment_date INTEGER NOT NULL,
-        status TEXT NOT NULL,
-        payment_method TEXT,
-        transaction_id TEXT,
-        FOREIGN KEY (member_id) REFERENCES members(id),
-        FOREIGN KEY (plan_id) REFERENCES membership_plans(id)
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE inventory_items(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        category TEXT NOT NULL,
-        quantity INTEGER NOT NULL,
-        condition TEXT,
-        purchase_price REAL,
-        purchase_date INTEGER,
-        notes TEXT
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE workout_plans(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        level TEXT,
-        duration_weeks INTEGER
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE member_workout_assignments(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        member_id INTEGER NOT NULL,
-        workout_plan_id INTEGER NOT NULL,
-        assigned_date INTEGER NOT NULL,
-        status TEXT DEFAULT 'active',
-        FOREIGN KEY (member_id) REFERENCES members(id),
-        FOREIGN KEY (workout_plan_id) REFERENCES workout_plans(id)
-      )
-    ''');
+  Future<String?> setting(String key) async {
+    if (isCloud) return cloudSettings[key];
+    final db = await database;
+    final rows = await db.query('settings', where: 'key = ?', whereArgs: [key]);
+    return rows.isEmpty ? null : rows.first['value'] as String;
   }
 
-  // Member CRUD
-  Future<int> insertMember(Member member) async {
-    final db = await database;
-    return await db.insert('members', member.toMap());
+  Future<void> setSetting(String key, String value) async {
+    if (isCloud) {
+      await setSettings({key: value});
+      return;
+    }
+    await (await database).insert('settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<List<Member>> getAllMembers() async {
+  Future<String> exportData() async {
+    if (isCloud) {
+      await refreshSettings();
+      final tables = <String, dynamic>{};
+      for (final table in dataTables) {
+        tables[table] = await readRecords(table);
+      }
+      tables['settings'] = cloudSettings.entries
+          .map((e) => {'key': e.key, 'value': e.value})
+          .toList();
+      return const JsonEncoder.withIndent('  ').convert({
+        'format': 'fitguide-backup',
+        'version': 1,
+        'exported_at': DateTime.now().toIso8601String(),
+        'tables': tables,
+      });
+    }
     final db = await database;
-    final maps = await db.query('members', orderBy: 'name');
-    return maps.map((map) => Member.fromMap(map)).toList();
-  }
-
-  Future<Member?> getMember(int id) async {
-    final db = await database;
-    final maps = await db.query(
-      'members',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (maps.isEmpty) return null;
-    return Member.fromMap(maps.first);
-  }
-
-  Future<int> updateMember(Member member) async {
-    final db = await database;
-    return await db.update(
-      'members',
-      member.toMap(),
-      where: 'id = ?',
-      whereArgs: [member.id],
-    );
-  }
-
-  Future<int> deleteMember(int id) async {
-    final db = await database;
-    return await db.delete(
-      'members',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  // MembershipPlan CRUD
-  Future<int> insertMembershipPlan(MembershipPlan plan) async {
-    final db = await database;
-    return await db.insert('membership_plans', plan.toMap());
-  }
-
-  Future<List<MembershipPlan>> getAllMembershipPlans() async {
-    final db = await database;
-    final maps = await db.query('membership_plans', orderBy: 'name');
-    return maps.map((map) => MembershipPlan.fromMap(map)).toList();
-  }
-
-  Future<MembershipPlan?> getMembershipPlan(int id) async {
-    final db = await database;
-    final maps = await db.query(
-      'membership_plans',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (maps.isEmpty) return null;
-    return MembershipPlan.fromMap(maps.first);
-  }
-
-  Future<int> updateMembershipPlan(MembershipPlan plan) async {
-    final db = await database;
-    return await db.update(
-      'membership_plans',
-      plan.toMap(),
-      where: 'id = ?',
-      whereArgs: [plan.id],
-    );
-  }
-
-  Future<int> deleteMembershipPlan(int id) async {
-    final db = await database;
-    return await db.delete(
-      'membership_plans',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  // Attendance CRUD
-  Future<int> insertAttendance(Attendance attendance) async {
-    final db = await database;
-    return await db.insert('attendance', attendance.toMap());
-  }
-
-  Future<List<Attendance>> getAllAttendance() async {
-    final db = await database;
-    final maps = await db.query('attendance', orderBy: 'check_in DESC');
-    return maps.map((map) => Attendance.fromMap(map)).toList();
-  }
-
-  Future<List<Attendance>> getAttendanceByMember(int memberId) async {
-    final db = await database;
-    final maps = await db.query(
-      'attendance',
-      where: 'member_id = ?',
-      whereArgs: [memberId],
-      orderBy: 'check_in DESC',
-    );
-    return maps.map((map) => Attendance.fromMap(map)).toList();
-  }
-
-  Future<Attendance?> getAttendance(int id) async {
-    final db = await database;
-    final maps = await db.query(
-      'attendance',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (maps.isEmpty) return null;
-    return Attendance.fromMap(maps.first);
-  }
-
-  Future<int> updateAttendance(Attendance attendance) async {
-    final db = await database;
-    return await db.update(
-      'attendance',
-      attendance.toMap(),
-      where: 'id = ?',
-      whereArgs: [attendance.id],
-    );
-  }
-
-  Future<int> deleteAttendance(int id) async {
-    final db = await database;
-    return await db.delete(
-      'attendance',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  // Trainer CRUD
-  Future<int> insertTrainer(Trainer trainer) async {
-    final db = await database;
-    return await db.insert('trainers', trainer.toMap());
-  }
-
-  Future<List<Trainer>> getAllTrainers() async {
-    final db = await database;
-    final maps = await db.query('trainers', orderBy: 'name');
-    return maps.map((map) => Trainer.fromMap(map)).toList();
-  }
-
-  Future<Trainer?> getTrainer(int id) async {
-    final db = await database;
-    final maps = await db.query(
-      'trainers',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (maps.isEmpty) return null;
-    return Trainer.fromMap(maps.first);
-  }
-
-  Future<int> updateTrainer(Trainer trainer) async {
-    final db = await database;
-    return await db.update(
-      'trainers',
-      trainer.toMap(),
-      where: 'id = ?',
-      whereArgs: [trainer.id],
-    );
-  }
-
-  Future<int> deleteTrainer(int id) async {
-    final db = await database;
-    return await db.delete(
-      'trainers',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  // Payment CRUD
-  Future<int> insertPayment(Payment payment) async {
-    final db = await database;
-    return await db.insert('payments', payment.toMap());
-  }
-
-  Future<List<Payment>> getAllPayments() async {
-    final db = await database;
-    final maps = await db.query('payments', orderBy: 'payment_date DESC');
-    return maps.map((map) => Payment.fromMap(map)).toList();
-  }
-
-  Future<List<Payment>> getPaymentsByMember(int memberId) async {
-    final db = await database;
-    final maps = await db.query(
-      'payments',
-      where: 'member_id = ?',
-      whereArgs: [memberId],
-      orderBy: 'payment_date DESC',
-    );
-    return maps.map((map) => Payment.fromMap(map)).toList();
-  }
-
-  Future<Payment?> getPayment(int id) async {
-    final db = await database;
-    final maps = await db.query(
-      'payments',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (maps.isEmpty) return null;
-    return Payment.fromMap(maps.first);
-  }
-
-  Future<int> updatePayment(Payment payment) async {
-    final db = await database;
-    return await db.update(
-      'payments',
-      payment.toMap(),
-      where: 'id = ?',
-      whereArgs: [payment.id],
-    );
-  }
-
-  Future<int> deletePayment(int id) async {
-    final db = await database;
-    return await db.delete(
-      'payments',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  // Inventory CRUD
-  Future<int> insertInventoryItem(InventoryItem item) async {
-    final db = await database;
-    return await db.insert('inventory_items', item.toMap());
-  }
-
-  Future<List<InventoryItem>> getAllInventoryItems() async {
-    final db = await database;
-    final maps = await db.query('inventory_items', orderBy: 'name');
-    return maps.map((map) => InventoryItem.fromMap(map)).toList();
-  }
-
-  Future<InventoryItem?> getInventoryItem(int id) async {
-    final db = await database;
-    final maps = await db.query(
-      'inventory_items',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (maps.isEmpty) return null;
-    return InventoryItem.fromMap(maps.first);
-  }
-
-  Future<int> updateInventoryItem(InventoryItem item) async {
-    final db = await database;
-    return await db.update(
-      'inventory_items',
-      item.toMap(),
-      where: 'id = ?',
-      whereArgs: [item.id],
-    );
-  }
-
-  Future<int> deleteInventoryItem(int id) async {
-    final db = await database;
-    return await db.delete(
-      'inventory_items',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  // WorkoutPlan CRUD
-  Future<int> insertWorkoutPlan(WorkoutPlan plan) async {
-    final db = await database;
-    return await db.insert('workout_plans', plan.toMap());
-  }
-
-  Future<List<WorkoutPlan>> getAllWorkoutPlans() async {
-    final db = await database;
-    final maps = await db.query('workout_plans', orderBy: 'name');
-    return maps.map((map) => WorkoutPlan.fromMap(map)).toList();
-  }
-
-  Future<WorkoutPlan?> getWorkoutPlan(int id) async {
-    final db = await database;
-    final maps = await db.query(
-      'workout_plans',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (maps.isEmpty) return null;
-    return WorkoutPlan.fromMap(maps.first);
-  }
-
-  Future<int> updateWorkoutPlan(WorkoutPlan plan) async {
-    final db = await database;
-    return await db.update(
-      'workout_plans',
-      plan.toMap(),
-      where: 'id = ?',
-      whereArgs: [plan.id],
-    );
-  }
-
-  Future<int> deleteWorkoutPlan(int id) async {
-    final db = await database;
-    return await db.delete(
-      'workout_plans',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  // MemberWorkoutAssignment CRUD
-  Future<int> assignWorkoutToMember(int memberId, int workoutPlanId) async {
-    final db = await database;
-    return await db.insert('member_workout_assignments', {
-      'member_id': memberId,
-      'workout_plan_id': workoutPlanId,
-      'assigned_date': DateTime.now().millisecondsSinceEpoch,
-      'status': 'active',
+    final tables = <String, dynamic>{};
+    await db.transaction((tx) async {
+      for (final table in dataTables) {
+        tables[table] = await tx.query(table);
+      }
+      tables['settings'] = await tx.query('settings');
+    });
+    return const JsonEncoder.withIndent('  ').convert({
+      'format': 'fitguide-backup',
+      'version': 1,
+      'exported_at': DateTime.now().toIso8601String(),
+      'tables': tables,
     });
   }
 
-  Future<List<Map<String, dynamic>>> getMemberAssignments(int memberId) async {
+  Future<void> importData(String json) async {
+    final data = jsonDecode(json);
+    if (data is! Map ||
+        data['format'] != 'fitguide-backup' ||
+        data['version'] != 1 ||
+        data['tables'] is! Map) {
+      throw const FormatException('Choose a valid FitGuide backup.');
+    }
+    if (isCloud) {
+      if (utf8.encode(json).length > 3 * 1024 * 1024) {
+        throw const FormatException(
+          'Cloud restore supports backups up to 3 MB. Larger backups require the server migration script.',
+        );
+      }
+      await request('restore', {'backup': data});
+      await refreshSettings();
+      return;
+    }
+    final tables = data['tables'] as Map;
     final db = await database;
-    return await db.query(
-      'member_workout_assignments',
-      where: 'member_id = ?',
-      whereArgs: [memberId],
-      orderBy: 'assigned_date DESC',
-    );
+    // All validation/inserts share a transaction, so a malformed backup rolls back.
+    await db.transaction((tx) async {
+      for (final table in dataTables.reversed) {
+        await tx.delete(table);
+      }
+      for (final table in [...dataTables, 'settings']) {
+        if (table == 'fee_invoices' && tables[table] == null) {
+          tables[table] = [];
+        }
+        if (tables[table] is! List) {
+          throw const FormatException('Backup is incomplete.');
+        }
+        if (table == 'settings') await tx.delete(table);
+        for (final row in tables[table] as List) {
+          if (row is! Map) {
+            throw const FormatException('Invalid backup record.');
+          }
+          await tx.insert(table, Map<String, Object?>.from(row));
+        }
+      }
+    });
   }
 
-  Future<int> updateAssignmentStatus(int id, String status) async {
-    final db = await database;
-    return await db.update(
-      'member_workout_assignments',
-      {'status': status},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  Future<int> deleteAssignment(int id) async {
-    final db = await database;
-    return await db.delete(
-      'member_workout_assignments',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+  Future<void> close() async {
+    if (_opening != null) await (await _opening!).close();
+    _opening = null;
   }
 }

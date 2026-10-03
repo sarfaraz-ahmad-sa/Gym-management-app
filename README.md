@@ -1,140 +1,136 @@
-# 💪 FitGuide — Tumhari 3-Month Fitness App
+# FitGuide Pro 3 — Flutter + Turso + Vercel
 
-72 kg → 68 kg + 6-pack abs ka poora safar. Workout plan, diet, progress
-tracking aur progress photos — sab ek app mein.
+One Flutter codebase for Android, iOS and responsive web. The deployed web app and mobile app use the same authenticated Node API and Turso/libSQL SQL database. Turso credentials stay on the server; they are never included in the Flutter bundle.
 
-Ye ek **Flutter** mobile app hai (Android + iOS dono pe chalti hai).
+## Included
 
----
+- Owner registration with a private setup code, password login, 7-day sessions and password changes.
+- Multiple workspaces per owner. Each workspace has isolated members, fees, receipts, visits, settings and exports.
+- Dashboard: “Welcome to [workspace name]”, logo, real attendance/revenue/dues metrics.
+- Workspace settings: name, PNG/JPEG/WebP logo (up to 190 KB), address, reception contact, opening hours, currency and country code.
+- Members, trainers, membership plans, equipment, workouts and assignment history.
+- Monthly fee invoices, custom invoices, partial payments and outstanding balances. Generating the same month twice skips existing invoices.
+- Optional invoice link when recording a payment. Use **Fees & dues → Receive** to prefill the correct invoice and remaining amount. Unlinked completed receipts do not automatically settle an invoice. Legacy pending receipts without invoices remain included in dues.
+- Explicit membership renewal on completed payment; editing an already-completed receipt does not extend membership again.
+- Roman Urdu fee reminders with member name, actual outstanding amount, earliest due month/date, last completed receipt amount/date, workspace signature and customizable fitness line.
+- Editable welcome/renewal/payment templates with placeholders. Review/copy a message or open WhatsApp; the user presses Send. No automatic message delivery is configured.
+- Download all data as a ZIP containing a JSON backup, per-table CSV files and member balances. Individual module CSV and receipt text exports are also available. Mobile opens the system share/save sheet.
+- Transactional JSON restore with IDs remapped to preserve other workspaces and the owner account. Passwords/sessions are excluded from workspace exports.
+- Separate local SQLite demo. Production uses the shared API; no silent local fallback on network failure.
+- Responsive Material 3 light/dark theme.
 
-## ✨ Features
+## Local development
 
-- **Home / Performance Dashboard** — aaj ka workout, goal progress bar, BMI,
-  weekly consistency ring (kitne workout/week target ke), habit streak,
-  weight trend, aur unlock hone wale **achievements/badges**
-- **3-Month Plan** — Month 1 (Foundation), Month 2 (Build & Burn), Month 3 (Cut & Carve)
-- **Exercise illustrations + Trainer Guide** — har exercise pe ek figure
-  illustration (image), aur tap karke poora "kaise karein" guide:
-  step-by-step, common galtiyan, aur saans (breathing) — bilkul gym trainer
-  ki tarah
-- **Diet plan** — Indian, high-protein, fat-loss meals + rules
-- **Progress** — weight log + graph (goal line ke saath), saare records save
-- **Progress photos** — camera/gallery se photo, app mein safe save
-- **Goals & Habits** — daily habits tracker (paani, neend, protein, steps,
-  no-junk) streak ke saath + apne **life goals** target-date ke saath
-- **Guide** — beginner rules, 6-pack ka sach, fat loss, recovery, motivation
-  (Home ke upar 💡 icon se khulta hai)
-- Saara data phone pe locally save hota hai (internet ki zaroorat nahi).
-
----
-
-## 🚀 Setup (step by step)
-
-### 1. Flutter install karo (ek baar)
-- https://docs.flutter.dev/get-started/install se Flutter SDK install karo.
-- Check: terminal mein `flutter doctor` chalao. Sab green hona chahiye.
-- Android ke liye: Android Studio + ek emulator ya USB se phone (developer mode ON).
-
-### 2. Is project ko ready karo
-Is folder (`fitguide/`) ko apne computer pe rakho, phir terminal mein:
+Requirements: Flutter **3.47.6**, Node **22**, npm. Install dependencies:
 
 ```bash
-cd fitguide
-
-# Android/iOS platform folders generate karo (zaroori — repo mein included nahi)
-flutter create .
-
-# Dependencies download karo
 flutter pub get
+npm ci
 ```
 
-### 3. App chalao
-Phone connect karke ya emulator chalu karke:
+For the development API, create a private `.env` from `.env.example` and set:
+
+```dotenv
+TURSO_DATABASE_URL=file:./development.db
+SETUP_CODE=your-long-private-registration-code
+ALLOWED_ORIGINS=http://localhost:8080
+```
+
+Start API and web in separate terminals:
 
 ```bash
-flutter run
+node --env-file=.env server/dev.js
+flutter run -d chrome --web-port=8080 --dart-define=API_BASE_URL=http://localhost:3000
 ```
 
-Pehli baar khulne par apna weight/goal/height daalo → "Start my journey".
+The API initializes the schema automatically. `npm run migrate` is also available after loading environment variables. Use the login screen’s **Create an owner account & workspace** action and your setup code. Existing owners can create more workspaces in Settings.
 
----
+## Turso database
 
-## 🔐 Permissions (photos feature ke liye)
+Use a **libSQL-compatible** Turso Cloud database for this version (`@libsql/client`). Set the database URL and a database-scoped token in backend environment variables. Never use a Turso organization/admin token in the client.
 
-`flutter create .` ke baad ye add karna padega:
-
-### iOS — `ios/Runner/Info.plist` mein `<dict>` ke andar paste karo:
-```xml
-<key>NSCameraUsageDescription</key>
-<string>Progress photos lene ke liye camera chahiye.</string>
-<key>NSPhotoLibraryUsageDescription</key>
-<string>Progress photos chunne ke liye gallery chahiye.</string>
-```
-
-### Android
-Modern Android mein gallery/camera ke liye extra manifest permission ki
-zaroorat nahi (image_picker system app use karta hai). Agar koi build error
-aaye to `android/app/build.gradle` mein `minSdkVersion` ko `21` ya us se
-upar set karo.
-
----
-
-## 📦 APK banana (phone pe install karne ke liye)
+If using the Turso CLI after signing in:
 
 ```bash
-flutter build apk --release
-```
-APK yahan milega: `build/app/outputs/flutter-apk/app-release.apk`
-Ise phone pe copy karke install kar lo.
-
----
-
-## 📁 Project structure
-
-```
-lib/
-  main.dart                 # app entry + onboarding gate
-  theme.dart                # colors & dark theme
-  models/
-    workout.dart            # Exercise / WorkoutDay / MonthPlan
-    progress.dart           # WeightEntry / ProgressPhoto
-    goal.dart               # Goal + daily Habit definitions
-  data/
-    plan_data.dart          # 3-month workout plan (content)
-    diet_data.dart          # diet plan
-    tips_data.dart          # coaching tips
-    exercise_guides.dart    # per-exercise illustration + how-to + mistakes
-  services/
-    storage_service.dart    # local save/load (shared_preferences)
-  state/
-    app_state.dart          # central state + performance logic (Provider)
-  screens/
-    root_nav.dart           # bottom navigation
-    onboarding_screen.dart
-    home_screen.dart        # performance dashboard
-    plan_screen.dart
-    workout_detail_screen.dart
-    diet_screen.dart
-    progress_screen.dart
-    photos_screen.dart
-    goals_screen.dart       # habits + life goals
-    tips_screen.dart
-assets/
-  exercises/                # 15 SVG exercise illustrations
+turso db create fitguide
+turso db show fitguide --url
+turso db tokens create fitguide
 ```
 
----
+Keep the token private. `server/schema.sql` contains the cloud SQL schema. The API applies the same schema from `server/schema.js`; it does not delete existing cloud tables. For later schema changes use a versioned migration.
 
-## ✏️ Plan ko apne hisaab se change karna
-- Workouts edit karo: `lib/data/plan_data.dart`
-- Diet edit karo: `lib/data/diet_data.dart`
-- Tips edit karo: `lib/data/tips_data.dart`
+## Vercel deployment
 
----
+Import the project root into Vercel (or deploy from CLI after `vercel login`). Framework preset: **Other**. The committed configuration installs Node dependencies, builds Flutter and publishes `build/web`; `api/gym.js` becomes a Node Function. API paths are excluded from SPA rewrites.
 
-## ⚠️ Disclaimer
-Ye general fitness/diet guidance hai, medical advice nahi. Koi health
-condition (heart, BP, diabetes, injury) ho to start karne se pehle doctor
-se baat karo.
+Add the following **server-side** environment variables for Production and Preview as needed:
 
-Chalo bhai, ab bahane khatam — **Day 1 se shuru!** 🔥
+| Variable | Purpose |
+| --- | --- |
+| `TURSO_DATABASE_URL` | Turso/libSQL cloud database URL |
+| `TURSO_AUTH_TOKEN` | Database access token |
+| `SETUP_CODE` | Private owner-registration code, not a public Flutter define |
+| `ALLOWED_ORIGINS` | Optional comma-separated exact extra web origins; the same deployment origin is automatically allowed |
+
+Optional prebuilt deployment: build with `flutter build web --release`, copy `build/web/` to `prebuilt-web/`, then run `vercel --local-config vercel.prebuilt.json --prod`. Keep the same server environment variables configured. The source ZIP includes the configuration; compiled output is generated by the build. Normal source builds use `vercel.json`.
+
+Then deploy:
+
+```bash
+vercel deploy --prod
+```
+
+The web app uses `/api/gym` on its own origin, with no API URL hardcoded. Verify owner signup, create a plan/member, generate fees, receive a partial payment, export data and sign in from mobile. A production domain/URL cannot be supplied until the project is actually deployed with account access and Turso credentials.
+
+**Hosting cost:** Vercel Hobby is restricted to personal, non-commercial use. A live gym business needs an appropriate Vercel plan. Turso’s free database quota is separate; neither database nor API hosting has unlimited usage. Do not interpret “free database” as “the complete commercial deployment is free forever.”
+
+## Android and iOS
+
+The same project includes `android/` and `ios/`. The Android release manifest includes Internet access. On mobile, enter the published FitGuide HTTPS server address on the login screen, then sign in with the same owner account as web. You can also embed only the public API address:
+
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=https://YOUR-DEPLOYED-DOMAIN
+flutter build appbundle --release --dart-define=API_BASE_URL=https://YOUR-DEPLOYED-DOMAIN
+flutter build ipa --release --dart-define=API_BASE_URL=https://YOUR-DEPLOYED-DOMAIN
+```
+
+Android SDK is needed for APK/AAB. Configure your own release keystore before Play Store upload; the template currently uses the development signing key for local release testing. iOS IPA requires macOS, Xcode, your Apple team and provisioning. No store publication or signing setup is performed by this code package.
+
+Cloud records require an Internet connection. Cross-device changes appear on refresh/app resume; no realtime push subscription or offline cloud write queue is implemented. The local demo works independently.
+
+## Daily backups and large imports
+
+Settings exports download records in pages of 500 so the API never returns the whole database in one oversized response. For a point-in-time export, pause simultaneous editing while downloading; a paged client export is not an atomic snapshot across all pages. Large downloads still require enough device memory for the assembled ZIP.
+
+The server backup script reads each workspace in one read transaction and writes compressed JSON files, without auth secrets:
+
+```bash
+node --env-file=.env server/backup.js
+```
+
+Set `BACKUP_DIRECTORY` to a protected folder on a separate server/disk. Run daily via your existing scheduler/cron, and copy that folder to a separate backup location. Automatic backup execution is **not active** merely because the script is included; configure the schedule and verify a restore first. Workspace backups do not include owner credentials, so keep database-level recovery configured for account recovery as well.
+
+Cloud JSON restore through the app is limited to **3 MB**, below the Vercel request limit. For a larger backup use the trusted server restore script, which authenticates an existing owner and bypasses HTTP body-size limits. It still replaces only the chosen workspace:
+
+```bash
+RESTORE_USERNAME=owner-name RESTORE_WORKSPACE_ID=workspace-uuid RESTORE_FILE=/private/backup.json node --env-file=.env server/restore.js
+```
+
+The script prompts privately for the existing password and asks you to type the workspace ID to confirm replacement. Remote transactions have a timeout; extremely large restores should be performed using a dedicated maintenance migration rather than while members are checking in.
+
+## Existing local SQLite records
+
+Export a JSON backup from the previous app before changing code. Create your cloud owner/workspace, then restore that JSON in Settings. Older backups without `fee_invoices` are accepted. Unlinked old receipts are preserved. Local passwords and sessions are not transferred; use the new cloud owner account.
+
+## Verification
+
+```bash
+npm test
+flutter analyze
+flutter test
+flutter build web --release --no-web-resources-cdn
+```
+
+Verified in this delivery: 18 Flutter tests, 8 backend tests, a clean Flutter analyzer and a release web build. Cloud integration tests run the real Node API against a local libSQL database; hosted Turso connectivity is not yet verified.
+
+Tests cover authentication/rate limits, workspace isolation, foreign-reference protection, monthly billing, partial balances, atomic renewal/restore, attendance, responsive Flutter layouts and member forms. Actual hosted Turso/Vercel and physical mobile verification require the external accounts/platform tools.

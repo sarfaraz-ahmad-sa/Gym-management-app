@@ -1,0 +1,13 @@
+{
+  "name": "fitguide-cloud",
+  "private": true,
+  "type": "module",
+  "engines": {"node": "22.x"},
+  "scripts": {
+    "test": "node --test server/*.test.js",
+    "migrate": "node server/migrate.js",
+    "dev": "node server/dev.js",
+    "backup": "node server/backup.js"
+  },
+  "dependencies": {"@libsql/client": "^0.17.0"}
+}
