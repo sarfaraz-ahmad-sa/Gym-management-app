@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
+
 import 'package:archive/archive.dart';
+
 import '../core/gym_store.dart';
 import '../core/format.dart';
 import '../core/fee_ledger.dart';
@@ -72,7 +74,7 @@ Future<void> exportWorkspace(GymStore store) async {
       ledger.dues[id] ?? 0,
       store.currency,
       last?['amount'] ?? '',
-      last == null ? '' : dateLabel(last['payment_date']),
+      last == null ? '' : store.dateLabel(last['payment_date']),
     ]);
   }
   add(

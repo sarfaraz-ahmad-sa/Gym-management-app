@@ -6,18 +6,31 @@ One Flutter codebase for Android, iOS and responsive web. The deployed web app a
 
 - Owner registration with a private setup code, password login, 7-day sessions and password changes.
 - Multiple workspaces per owner. Each workspace has isolated members, fees, receipts, visits, settings and exports.
-- Dashboard: “Welcome to [workspace name]”, logo, real attendance/revenue/dues metrics.
+- Dashboard: real 7/30/90-day revenue and attendance analytics, membership health, payment methods, plans, dues and gym operations.
 - Workspace settings: name, PNG/JPEG/WebP logo (up to 190 KB), address, reception contact, opening hours, currency and country code.
 - Members, trainers, membership plans, equipment, workouts and assignment history.
 - Monthly fee invoices, custom invoices, partial payments and outstanding balances. Generating the same month twice skips existing invoices.
 - Optional invoice link when recording a payment. Use **Fees & dues → Receive** to prefill the correct invoice and remaining amount. Unlinked completed receipts do not automatically settle an invoice. Legacy pending receipts without invoices remain included in dues.
-- Explicit membership renewal on completed payment; editing an already-completed receipt does not extend membership again.
+- Explicit membership renewal on completed payment, with persistent renewal history that survives receipt status changes and backup/restore.
+- Invoices with linked receipts cannot change member or be voided. Receipts with applied renewal cannot change member or plan.
+- Workspace timezone (default Asia/Karachi) defines expiry dates, check-in, renewal and reporting. Membership is valid throughout its expiry date.
 - Roman Urdu fee reminders with member name, actual outstanding amount, earliest due month/date, last completed receipt amount/date, workspace signature and customizable fitness line.
 - Editable welcome/renewal/payment templates with placeholders. Review/copy a message or open WhatsApp; the user presses Send. No automatic message delivery is configured.
 - Download all data as a ZIP containing a JSON backup, per-table CSV files and member balances. Individual module CSV and receipt text exports are also available. Mobile opens the system share/save sheet.
 - Transactional JSON restore with IDs remapped to preserve other workspaces and the owner account. Passwords/sessions are excluded from workspace exports.
 - Separate local SQLite demo. Production uses the shared API; no silent local fallback on network failure.
 - Responsive Material 3 light/dark theme.
+- Expired cloud sessions clear the stored token and return to sign-in. Mutations refresh their affected tables instead of all workspace history.
+
+## UI and billing update
+
+Apply the server and Flutter source together. The API automatically adds the renewal-history column on startup; local SQLite upgrades to version 5 without deleting existing records. Legacy completed receipts are conservatively treated as already renewed because older versions did not record whether renewal had been applied. Old backups remain supported.
+
+Run `flutter pub get` before building to install the timezone dependency. Workspace timezone can be changed in Settings. Android release builds require your existing upload keystore configured through `android/key.properties`; `android/key.properties.example` shows the fields. Release builds no longer fall back to a debug key. iOS signing configuration is unchanged.
+
+Verification for this update: **14 backend tests passed**, and **24 Dart business-logic tests passed** in a standalone harness using real SQLite and the real Node API. The harness substituted Flutter notification/preferences bindings; it did not render widgets. The included phone/iPad widget tests and native iOS/Android builds still need to be run with Flutter on a suitable machine.
+
+Initial workspace loading still reads full paged history for the current dashboard and search. This update reduces mutation refreshes to affected tables; server summaries and fully lazy screen loading are future scalability work.
 
 ## Local development
 

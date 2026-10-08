@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+
 import '../core/entities.dart';
 import '../core/format.dart';
 import '../core/gym_store.dart';
@@ -19,8 +20,8 @@ class _FeesScreenState extends State<FeesScreen> {
   bool _busy = false;
   int _page = 0;
   Future<void> _generate(GymStore store) async {
-    final now = DateTime.now();
-    DateTime due = dateOnly(now);
+    final now = store.calendar.instant(DateTime.now());
+    DateTime due = store.calendar.today;
     final month = TextEditingController(
       text: DateFormat('yyyy-MM').format(now),
     );
@@ -55,7 +56,9 @@ class _FeesScreenState extends State<FeesScreen> {
                   const SizedBox(height: 16),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.calendar_today_outlined),
-                    label: Text('Due ${dateLabel(due.millisecondsSinceEpoch)}'),
+                    label: Text(
+                      'Due ${store.dateLabel(due.millisecondsSinceEpoch)}',
+                    ),
                     onPressed: () async {
                       final picked = await showDatePicker(
                         context: ctx,
@@ -63,7 +66,8 @@ class _FeesScreenState extends State<FeesScreen> {
                         firstDate: DateTime(2020),
                         lastDate: DateTime(2100),
                       );
-                      if (picked != null) update(() => due = picked);
+                      if (picked != null)
+                        update(() => due = store.calendar.atDate(picked));
                     },
                   ),
                 ],
@@ -150,7 +154,7 @@ class _FeesScreenState extends State<FeesScreen> {
                   store.memberDue(id),
                   store.dueSince(id)?.toIso8601String(),
                   last?['amount'],
-                  last == null ? '' : dateLabel(last['payment_date']),
+                  last == null ? '' : store.dateLabel(last['payment_date']),
                 ]);
               }
               final csv = lines
@@ -164,8 +168,7 @@ class _FeesScreenState extends State<FeesScreen> {
           child: dueMembers.isEmpty
               ? const EmptyState(
                   title: 'No pending fees',
-                  message:
-                      'Generate monthly fees or add a fee invoice to track amounts owed.',
+                  message: 'Generate monthly fees or add a fee invoice to track amounts owed.',
                 )
               : Column(
                   children: dueMembers.map((m) {
@@ -175,7 +178,7 @@ class _FeesScreenState extends State<FeesScreen> {
                       leading: PersonAvatar(m['name'] as String),
                       title: Text(m['name'] as String),
                       subtitle: Text(
-                        'Due ${money(store.memberDue(id), store.currency)} • since ${dateLabel(store.dueSince(id)?.millisecondsSinceEpoch)}',
+                        'Due ${money(store.memberDue(id), store.currency)} • since ${store.dateLabel(store.dueSince(id)?.millisecondsSinceEpoch)}',
                       ),
                       trailing: const Icon(
                         Icons.account_balance_wallet_outlined,
@@ -196,8 +199,7 @@ class _FeesScreenState extends State<FeesScreen> {
           child: invoices.isEmpty
               ? const EmptyState(
                   title: 'No fee invoices yet',
-                  message:
-                      'Generate the current month’s fees, or add a custom invoice.',
+                  message: 'Generate the current month’s fees, or add a custom invoice.',
                 )
               : Column(
                   children: invoices
@@ -208,7 +210,7 @@ class _FeesScreenState extends State<FeesScreen> {
                           contentPadding: EdgeInsets.zero,
                           title: Text(store.label('members', i['member_id'])),
                           subtitle: Text(
-                            '${i['period'] ?? 'Custom fee'} • Due ${dateLabel(i['due_date'])}\n${money(i['amount'], store.currency)} billed • ${money(store.invoiceBalance(i), store.currency)} pending',
+                            '${i['period'] ?? 'Custom fee'} • Due ${store.dateLabel(i['due_date'])}\n${money(i['amount'], store.currency)} billed • ${money(store.invoiceBalance(i), store.currency)} pending',
                           ),
                           isThreeLine: true,
                           onTap: () => editRecord(

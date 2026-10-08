@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'cloud_api.dart';
+
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -91,7 +93,7 @@ class DatabaseService {
       return await engine.openDatabase(
         path,
         options: OpenDatabaseOptions(
-          version: 4,
+          version: 5,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           onCreate: (db, _) => _schema(db),
           onUpgrade: (db, _, _) => _schema(db),
@@ -129,7 +131,8 @@ class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL REFERENCES members(id),
         plan_id INTEGER REFERENCES membership_plans(id), amount REAL NOT NULL,
         payment_date INTEGER NOT NULL, status TEXT NOT NULL,
-        payment_method TEXT, transaction_id TEXT, invoice_id INTEGER REFERENCES fee_invoices(id))''',
+        payment_method TEXT, transaction_id TEXT, invoice_id INTEGER REFERENCES fee_invoices(id),
+        renewal_applied INTEGER NOT NULL DEFAULT 0)''',
       '''CREATE TABLE IF NOT EXISTS inventory_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, category TEXT NOT NULL,
         quantity INTEGER NOT NULL, condition TEXT, purchase_price REAL,
@@ -156,6 +159,14 @@ class DatabaseService {
     if (!paymentColumns.any((c) => c['name'] == 'invoice_id')) {
       await db.execute(
         'ALTER TABLE payments ADD COLUMN invoice_id INTEGER REFERENCES fee_invoices(id)',
+      );
+    }
+    if (!paymentColumns.any((c) => c['name'] == 'renewal_applied')) {
+      await db.execute(
+        'ALTER TABLE payments ADD COLUMN renewal_applied INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute(
+        "UPDATE payments SET renewal_applied=1 WHERE status='completed'",
       );
     }
     // Preserve existing records; only add the missing columns.
@@ -266,7 +277,31 @@ class DatabaseService {
           if (row is! Map) {
             throw const FormatException('Invalid backup record.');
           }
-          await tx.insert(table, Map<String, Object?>.from(row));
+          final values = Map<String, Object?>.from(row);
+          if (table == 'payments') {
+            values['renewal_applied'] ??= values['status'] == 'completed'
+                ? 1
+                : 0;
+            if (values['renewal_applied'] != 0 &&
+                values['renewal_applied'] != 1) {
+              throw const FormatException('Invalid renewal history.');
+            }
+            if (values['invoice_id'] != null) {
+              final invoices = await tx.query(
+                'fee_invoices',
+                where: 'id=?',
+                whereArgs: [values['invoice_id']],
+              );
+              if (invoices.isEmpty ||
+                  invoices.first['member_id'] != values['member_id'] ||
+                  invoices.first['status'] == 'void') {
+                throw const FormatException(
+                  'Backup receipt has an invalid member or invoice.',
+                );
+              }
+            }
+          }
+          await tx.insert(table, values);
         }
       }
     });

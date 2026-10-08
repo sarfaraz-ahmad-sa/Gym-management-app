@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../services/auth_service.dart';
 import '../widgets/common.dart';
 
@@ -58,6 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
+    final scheme = Theme.of(context).colorScheme;
     final setup = auth.needsSetup;
     if (_server.text.isEmpty && auth.api.baseUrl.isNotEmpty) {
       _server.text = auth.api.baseUrl;
@@ -65,8 +67,14 @@ class _LoginScreenState extends State<LoginScreen> {
     final form = Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 430),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: scheme.outlineVariant),
+          ),
           child: Form(
             key: _form,
             child: Column(
@@ -74,7 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Brand(),
-                const SizedBox(height: 42),
+                const SizedBox(height: 28),
                 Text(
                   setup ? 'Make it your workspace.' : 'Welcome back.',
                   style: Theme.of(context).textTheme.headlineLarge,
@@ -219,9 +227,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       ? 'Sign in with the same owner account on mobile and web. Demo records stay separate.'
                       : 'Your records stay on this device. Demo data is kept in a separate workspace.',
                   textAlign: TextAlign.center,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(height: 1.6),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(height: 1.6),
                 ),
               ],
             ),
@@ -236,7 +243,7 @@ class _LoginScreenState extends State<LoginScreen> {
             if (c.maxWidth < 950) return SingleChildScrollView(child: form);
             return Row(
               children: [
-                Expanded(child: _story()),
+                Expanded(child: SingleChildScrollView(child: _story())),
                 Expanded(child: SingleChildScrollView(child: form)),
               ],
             );
@@ -262,128 +269,146 @@ class _LoginScreenState extends State<LoginScreen> {
     validator: (v) =>
         v == null || v.trim().isEmpty ? 'Enter ${label.toLowerCase()}' : null,
   );
-  Widget _story() => Container(
-    margin: const EdgeInsets.all(18),
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(30),
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF174EA6), Color(0xFF1A73E8), Color(0xFF5198FA)],
-      ),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(48),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .13),
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: const Text(
-                'BUILT FOR YOUR EVERYDAY',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.6,
-                ),
-              ),
-            ),
-            const SizedBox(height: 28),
-            const Text(
-              'Run your gym.\nGrow your\ncommunity.',
-              style: TextStyle(
-                fontSize: 48,
-                height: 1.1,
-                letterSpacing: -1.7,
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 22),
-            const Text(
-              'Members, memberships, payments and the people\nwho make your club feel like home. All together.',
-              style: TextStyle(
-                color: Color(0xFFD2E3FC),
-                height: 1.7,
-                fontSize: 15,
-              ),
-            ),
-            const SizedBox(height: 40),
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .12),
-                border: Border.all(color: Colors.white.withValues(alpha: .2)),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Column(
-                children: [
-                  for (final entry in [
-                    (
-                      'People first',
-                      'Member profiles & tailored programs',
-                      Icons.people_outline,
-                    ),
-                    (
-                      'Less paperwork',
-                      'Payments, renewals & daily check-ins',
-                      Icons.task_alt,
-                    ),
-                    (
-                      'Room to grow',
-                      'Real insights, on mobile & web',
-                      Icons.insights,
-                    ),
-                  ])
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Row(
-                        children: [
-                          Icon(entry.$3, color: Colors.white, size: 22),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  entry.$1,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 5),
-                                Text(
-                                  entry.$2,
-                                  style: const TextStyle(
-                                    color: Color(0xFFD2E3FC),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 36),
-            const Text(
-              'A stronger club starts with a simpler day.',
-              style: TextStyle(color: Color(0xFFD2E3FC), fontSize: 12),
-            ),
-          ],
+  Widget _story() {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: scheme.outlineVariant),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [scheme.surface, scheme.primaryContainer],
         ),
       ),
-    ),
-  );
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Text(
+                  'BUILT FOR YOUR EVERYDAY',
+                  style: TextStyle(
+                    color: scheme.primary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.6,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
+              Text(
+                'Run your gym.\nGrow your\ncommunity.',
+                style: TextStyle(
+                  fontSize: 48,
+                  height: 1.1,
+                  letterSpacing: -1.7,
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 22),
+              Text(
+                'Members, memberships, payments and the people\nwho make your club feel like home. All together.',
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  height: 1.7,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 40),
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  border: Border.all(color: scheme.outlineVariant),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Column(
+                  children: [
+                    for (final entry in [
+                      (
+                        'People first',
+                        'Member profiles & tailored programs',
+                        Icons.people_outline,
+                      ),
+                      (
+                        'Less paperwork',
+                        'Payments, renewals & daily check-ins',
+                        Icons.task_alt,
+                      ),
+                      (
+                        'Room to grow',
+                        'Real insights, on mobile & web',
+                        Icons.insights,
+                      ),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: scheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                entry.$3,
+                                color: scheme.primary,
+                                size: 22,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    entry.$1,
+                                    style: TextStyle(
+                                      color: scheme.onSurface,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    entry.$2,
+                                    style: TextStyle(
+                                      color: scheme.onSurfaceVariant,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 36),
+              Text(
+                'A stronger club starts with a simpler day.',
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

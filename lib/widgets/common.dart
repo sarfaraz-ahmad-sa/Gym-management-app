@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../core/theme.dart';
 import '../core/format.dart';
 
@@ -29,10 +30,8 @@ class Brand extends StatelessWidget {
             fit: BoxFit.scaleDown,
             child: Text(
               'FitGuide',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontSize: 23,
-                letterSpacing: -.7,
-              ),
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontSize: 23, letterSpacing: -.7),
             ),
           ),
         ),
@@ -142,40 +141,57 @@ class SectionCard extends StatelessWidget {
   final Widget? action;
   final double padding;
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: EdgeInsets.all(padding),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (title != null) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title!,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      if (subtitle != null) ...[
-                        const SizedBox(height: 5),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => Card(
+      child: Padding(
+        padding: EdgeInsets.all(
+          constraints.maxWidth < 400
+              ? padding.clamp(0, 18).toDouble()
+              : padding,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (title != null) ...[
+              Flex(
+                direction:
+                    constraints.maxWidth < 400 ||
+                        MediaQuery.textScalerOf(context).scale(14) >= 22
+                    ? Axis.vertical
+                    : Axis.horizontal,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Flexible(
+                    flex:
+                        constraints.maxWidth < 400 ||
+                            MediaQuery.textScalerOf(context).scale(14) >= 22
+                        ? 0
+                        : 1,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          subtitle!,
-                          style: Theme.of(context).textTheme.bodySmall,
+                          title!,
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 5),
+                          Text(
+                            subtitle!,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                ?action,
-              ],
-            ),
-            const SizedBox(height: 22),
+                  ?action,
+                ],
+              ),
+              const SizedBox(height: 22),
+            ],
+            child,
           ],
-          child,
-        ],
+        ),
       ),
     ),
   );
@@ -269,9 +285,8 @@ class PageHeading extends StatelessWidget {
 
 void toast(BuildContext context, String message) {
   if (context.mounted) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }
 

@@ -6,6 +6,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { promisify } from "node:util";
+import { addCalendarDays, calendarDate, defaultTimeZone, validTimeZone, workspaceTimeZone } from "./calendar.js";
 const scrypt = promisify(scryptCallback);
 export const tables = [
   "membership_plans",
@@ -57,6 +58,7 @@ const fields = {
     "payment_method",
     "transaction_id",
     "invoice_id",
+    "renewal_applied",
   ],
   inventory_items: [
     "name",
@@ -102,6 +104,7 @@ const allowedSettings = new Set([
   "gym_name",
   "currency",
   "country_code",
+  "timezone",
   "gym_logo",
   "gym_address",
   "gym_phone",
@@ -205,6 +208,8 @@ async function setSettings(db, w, values) {
       fail("Invalid currency.");
     if (key === "country_code" && !/^[1-9]\d{0,3}$/.test(value))
       fail("Invalid country code.");
+    if (key === "timezone" && !validTimeZone(value))
+      fail("Choose a valid IANA timezone, such as Asia/Karachi.");
     await db.execute({
       sql: "INSERT INTO settings(workspace_id,key,value) VALUES(?,?,?) ON CONFLICT(workspace_id,key) DO UPDATE SET value=excluded.value",
       args: [w, key, value],
@@ -261,6 +266,7 @@ async function validate(
         "hire_date",
         "purchase_date",
         "assigned_date",
+        "renewal_applied",
       ].includes(key)
     )
       fail("Text fields must contain text.");
@@ -350,21 +356,33 @@ async function validate(
     if (invoice.member_id !== row.member_id || invoice.status === "void")
       fail("Choose an active invoice for the selected member.");
   }
+  if (row.renewal_applied != null && ![0, 1].includes(row.renewal_applied))
+    fail("Invalid renewal history.");
+  if (table === "fee_invoices" && id != null) {
+    const original = await one(db, table, id, w);
+    if (original.member_id !== row.member_id) {
+      const linked = await db.execute({
+        sql: "SELECT id FROM payments WHERE workspace_id=? AND invoice_id=? LIMIT 1",
+        args: [w, id],
+      });
+      if (linked.rows.length) fail("An invoice with linked payments cannot change member.");
+    }
+  }
   if (table === "fee_invoices" && id != null && row.status === "void") {
     const paid = await db.execute({
-      sql: "SELECT id FROM payments WHERE workspace_id=? AND invoice_id=? AND status='completed' LIMIT 1",
+      sql: "SELECT id FROM payments WHERE workspace_id=? AND invoice_id=? LIMIT 1",
       args: [w, id],
     });
     if (paid.rows.length)
-      fail("An invoice with completed payments cannot be voided.");
+      fail("An invoice with linked payments cannot be voided.");
   }
 }
-export function createService(db, env = process.env) {
+export function createService(db, env = process.env, { now = Date.now } = {}) {
   const session = async (account) => {
     const token = randomBytes(32).toString("base64url");
     await db.execute({
       sql: "INSERT INTO cloud_sessions(token_hash,account_id,expires_at) VALUES(?,?,?)",
-      args: [hashToken(token), account.id, Date.now() + 7 * 86400000],
+      args: [hashToken(token), account.id, now() + 7 * 86400000],
     });
     return {
       token,
@@ -382,7 +400,7 @@ export function createService(db, env = process.env) {
       fail("Sign in to continue.", 401);
     const rows = await db.execute({
       sql: "SELECT a.id,a.name,a.username FROM accounts a JOIN cloud_sessions s ON s.account_id=a.id WHERE s.token_hash=? AND s.expires_at>?",
-      args: [hashToken(token), Date.now()],
+      args: [hashToken(token), now()],
     });
     if (!rows.rows.length)
       fail("Your session expired. Please sign in again.", 401);
@@ -390,10 +408,10 @@ export function createService(db, env = process.env) {
   };
   const throttle = async (ip, username) => {
     await transaction(db, async (tx) => {
-      const now = Date.now();
+      const attemptTime = now();
       await tx.execute({
         sql: "DELETE FROM auth_attempts WHERE window_start < ?",
-        args: [now - 3600000],
+        args: [attemptTime - 3600000],
       });
       for (const source of [`ip:${ip}`, `user:${username}`]) {
         const key = hashToken(source);
@@ -405,13 +423,13 @@ export function createService(db, env = process.env) {
         ).rows[0];
         if (
           existing &&
-          existing.window_start > now - 900000 &&
+          existing.window_start > attemptTime - 900000 &&
           existing.attempts >= 10
         )
           fail("Too many attempts. Try again in 15 minutes.", 429);
         await tx.execute({
           sql: "INSERT INTO auth_attempts(key,attempts,window_start) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END, window_start=CASE WHEN window_start<? THEN ? ELSE window_start END",
-          args: [key, now, now - 900000, now - 900000, now],
+          args: [key, attemptTime, attemptTime - 900000, attemptTime - 900000, attemptTime],
         });
       }
     });
@@ -448,17 +466,18 @@ export function createService(db, env = process.env) {
             fail("This username is already registered.", 409);
           await tx.execute({
             sql: "INSERT INTO accounts VALUES(?,?,?,?,?,?)",
-            args: [account.id, name, username, hash, salt, Date.now()],
+            args: [account.id, name, username, hash, salt, now()],
           });
           const w = randomUUID();
           await tx.execute({
             sql: "INSERT INTO workspaces VALUES(?,?,?,?)",
-            args: [w, account.id, gymName, Date.now()],
+            args: [w, account.id, gymName, now()],
           });
           await setSettings(tx, w, {
             gym_name: gymName,
             currency: "PKR",
             country_code: "92",
+            timezone: defaultTimeZone,
           });
         });
         return session(account);
@@ -535,12 +554,13 @@ export function createService(db, env = process.env) {
       await transaction(db, async (tx) => {
         await tx.execute({
           sql: "INSERT INTO workspaces VALUES(?,?,?,?)",
-          args: [w, account.id, name, Date.now()],
+          args: [w, account.id, name, now()],
         });
         await setSettings(tx, w, {
           gym_name: name,
           currency: "PKR",
           country_code: "92",
+          timezone: defaultTimeZone,
         });
       });
       return { id: w, name };
@@ -603,6 +623,8 @@ export function createService(db, env = process.env) {
         row = { ...body.row },
         id = row.id;
       delete row.id;
+      // Renewal history is server-managed; clients may echo it but cannot reset it.
+      if (table === "payments") delete row.renewal_applied;
       return transaction(db, async (tx) => {
         let requestHash;
         if (table === "payments" && body.operationId != null) {
@@ -627,6 +649,10 @@ export function createService(db, env = process.env) {
         }
         let original;
         if (id != null) original = await one(tx, table, id, w);
+        if (table === "payments" && original?.renewal_applied === 1 &&
+            (row.member_id !== original.member_id || (row.plan_id ?? null) !== (original.plan_id ?? null))) {
+          fail("A receipt with applied renewal cannot change member or plan.");
+        }
         if (
           table === "members" &&
           id == null &&
@@ -634,10 +660,11 @@ export function createService(db, env = process.env) {
           row.expiry_date == null
         ) {
           const plan = await one(tx, "membership_plans", row.plan_id, w);
-          row.expiry_date = row.join_date + plan.duration_days * 86400000;
+          row.expiry_date = addCalendarDays(row.join_date, plan.duration_days, await workspaceTimeZone(tx, w));
         }
         await validate(tx, table, row, w, id);
-        if (id == null) await insert(tx, table, row, w);
+        let savedId = id;
+        if (id == null) savedId = await insert(tx, table, row, w);
         else {
           const keys = Object.keys(row);
           await tx.execute({
@@ -649,25 +676,28 @@ export function createService(db, env = process.env) {
           table === "payments" &&
           body.renew === true &&
           row.status === "completed" &&
+          original?.renewal_applied !== 1 &&
           original?.status !== "completed"
         ) {
           if (!row.plan_id) fail("Choose a plan for renewal.");
           const plan = await one(tx, "membership_plans", row.plan_id, w),
             member = await one(tx, "members", row.member_id, w);
-          const today = new Date();
-          today.setUTCHours(0, 0, 0, 0);
-          const expiry =
-            Math.max(member.expiry_date ?? 0, today.getTime()) +
-            plan.duration_days * 86400000;
+          const zone = await workspaceTimeZone(tx, w);
+          const today = addCalendarDays(now(), 0, zone);
+          const expiry = addCalendarDays(Math.max(member.expiry_date ?? 0, today), plan.duration_days, zone);
           await tx.execute({
             sql: "UPDATE members SET plan_id=?,status='active',expiry_date=? WHERE id=? AND workspace_id=?",
             args: [row.plan_id, expiry, row.member_id, w],
+          });
+          await tx.execute({
+            sql: "UPDATE payments SET renewal_applied=1 WHERE id=? AND workspace_id=?",
+            args: [savedId, w],
           });
         }
         if (requestHash) {
           await tx.execute({
             sql: "INSERT INTO mutation_receipts(workspace_id,key,request_hash,created_at) VALUES(?,?,?,?)",
-            args: [w, body.operationId, requestHash, Date.now()],
+            args: [w, body.operationId, requestHash, now()],
           });
         }
         return { ok: true };
@@ -686,11 +716,10 @@ export function createService(db, env = process.env) {
     if (action === "checkIn")
       return transaction(db, async (tx) => {
         const member = await one(tx, "members", body.memberId, w);
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
+        const zone = await workspaceTimeZone(tx, w);
         if (
           member.status !== "active" ||
-          (member.expiry_date != null && member.expiry_date < today.getTime())
+          (member.expiry_date != null && calendarDate(member.expiry_date, zone) < calendarDate(now(), zone))
         )
           fail("Only active members with valid membership can check in.");
         if (
@@ -707,7 +736,7 @@ export function createService(db, env = process.env) {
           "attendance",
           {
             member_id: body.memberId,
-            check_in: Date.now(),
+            check_in: now(),
             notes:
               typeof body.notes === "string" ? body.notes.slice(0, 2000) : null,
           },
@@ -719,7 +748,7 @@ export function createService(db, env = process.env) {
       await one(db, "attendance", body.id, w);
       await db.execute({
         sql: "UPDATE attendance SET check_out=? WHERE workspace_id=? AND id=? AND check_out IS NULL",
-        args: [Date.now(), w, body.id],
+        args: [now(), w, body.id],
       });
       return { ok: true };
     }
@@ -737,7 +766,7 @@ export function createService(db, env = process.env) {
           {
             member_id: body.memberId,
             workout_plan_id: body.workoutId,
-            assigned_date: Date.now(),
+            assigned_date: now(),
             status: "active",
           },
           w,
@@ -752,8 +781,8 @@ export function createService(db, env = process.env) {
         const date = Number(body.dueDate);
         if (!Number.isSafeInteger(date) || date < 0) fail("Invalid due date.");
         const result = await tx.execute({
-          sql: "INSERT INTO fee_invoices(workspace_id,member_id,amount,due_date,period,description,status) SELECT m.workspace_id,m.id,p.price,?,?,?,'unpaid' FROM members m JOIN membership_plans p ON p.id=m.plan_id AND p.workspace_id=m.workspace_id WHERE m.workspace_id=? AND m.status='active' ON CONFLICT(workspace_id,member_id,period) DO NOTHING",
-          args: [date, period, `Membership fee • ${period}`, w],
+          sql: "INSERT INTO fee_invoices(workspace_id,member_id,amount,due_date,period,description,status) SELECT m.workspace_id,m.id,p.price,?,?,?,'unpaid' FROM members m JOIN membership_plans p ON p.id=m.plan_id AND p.workspace_id=m.workspace_id WHERE m.workspace_id=? AND m.status='active' AND (m.expiry_date IS NULL OR m.expiry_date>=?) ON CONFLICT(workspace_id,member_id,period) DO NOTHING",
+          args: [date, period, `Membership fee • ${period}`, w, addCalendarDays(now(), 0, await workspaceTimeZone(tx, w))],
         });
         return { created: result.rowsAffected };
       });
@@ -795,6 +824,7 @@ export function createService(db, env = process.env) {
               oldId = idNumber(row.id);
             delete row.id;
             delete row.workspace_id;
+            if (table === "payments") row.renewal_applied ??= row.status === "completed" ? 1 : 0;
             if (maps[table].has(oldId)) fail("Duplicate backup record ID.");
             for (const [key, target] of Object.entries(refs))
               if (row[key] != null) {

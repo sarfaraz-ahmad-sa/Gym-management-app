@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:fitguide/core/gym_store.dart';
@@ -8,10 +10,10 @@ import 'package:fitguide/services/db_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   sqfliteFfiInit();
-  late DatabaseService service;
+  late TrackingDatabaseService service;
   late GymStore store;
   setUp(() async {
-    service = DatabaseService(
+    service = TrackingDatabaseService(
       name: inMemoryDatabasePath,
       factory: databaseFactoryFfi,
     );
@@ -39,10 +41,10 @@ void main() {
   test('member persists and receives plan-based expiry', () async {
     final member = store.rows('members').first;
     expect(
-      asDate(
-        member['expiry_date'],
-      )!.difference(asDate(member['join_date'])!).inDays,
-      30,
+      member['expiry_date'],
+      store.calendar
+          .addDays(store.calendar.fromTimestamp(member['join_date'])!, 30)
+          .millisecondsSinceEpoch,
     );
     await store.load();
     expect(store.rows('members').first['name'], 'Anis');
@@ -191,4 +193,188 @@ void main() {
       isFalse,
     );
   });
+  test(
+    'receipt status cycles and backup restore cannot apply a renewal twice',
+    () async {
+      final member = store.rows('members').first;
+      await store.save('payments', {
+        'member_id': member['id'],
+        'plan_id': member['plan_id'],
+        'amount': 5000.0,
+        'status': 'completed',
+        'payment_date': DateTime.now().millisecondsSinceEpoch,
+      }, renew: true);
+      final expiry = store.rows('members').first['expiry_date'];
+      var receipt = store.rows('payments').first;
+      expect(receipt['renewal_applied'], 1);
+      await store.save('payments', {
+        ...receipt,
+        'status': 'pending',
+        'renewal_applied': 0,
+      });
+      await store.save('payments', {
+        ...receipt,
+        'status': 'completed',
+        'renewal_applied': 0,
+      }, renew: true);
+      expect(store.rows('members').first['expiry_date'], expiry);
+      await service.importData(await service.exportData());
+      await store.load();
+      receipt = store.rows('payments').first;
+      await store.save('payments', {...receipt, 'status': 'pending'});
+      await store.save('payments', {
+        ...receipt,
+        'status': 'completed',
+      }, renew: true);
+      expect(store.rows('members').first['expiry_date'], expiry);
+      await expectLater(
+        store.save('payments', {...receipt, 'plan_id': null}),
+        throwsStateError,
+      );
+    },
+  );
+
+  test(
+    'an invoice with any linked receipt cannot be moved to another member',
+    () async {
+      final member = store.rows('members').first;
+      await store.save('members', {
+        'name': 'Second',
+        'phone': '03009998888',
+        'status': 'active',
+      });
+      final second = store
+          .rows('members')
+          .firstWhere((m) => m['id'] != member['id']);
+      await store.generateFees('2026-10', store.calendar.today);
+      final invoice = store.rows('fee_invoices').first;
+      await store.save('payments', {
+        'member_id': member['id'],
+        'invoice_id': invoice['id'],
+        'amount': 1000.0,
+        'status': 'pending',
+        'payment_date': DateTime.now().millisecondsSinceEpoch,
+      });
+      await expectLater(
+        store.save('fee_invoices', {...invoice, 'member_id': second['id']}),
+        throwsStateError,
+      );
+      await store.save('payments', {
+        ...store.rows('payments').first,
+        'status': 'completed',
+      });
+      await expectLater(
+        store.save('fee_invoices', {...invoice, 'member_id': second['id']}),
+        throwsStateError,
+      );
+      await expectLater(
+        store.save('fee_invoices', {...invoice, 'status': 'void'}),
+        throwsStateError,
+      );
+      await service.importData(await service.exportData());
+      await store.load();
+      expect(store.rows('fee_invoices').first['member_id'], member['id']);
+      expect(store.memberDue(member['id'] as int), 4000);
+    },
+  );
+
+  test(
+    'membership remains valid for its whole workspace expiry date',
+    () async {
+      final member = store.rows('members').first;
+      await store.save('members', {
+        ...member,
+        'join_date': store.calendar
+            .addDays(store.calendar.today, -30)
+            .millisecondsSinceEpoch,
+        'expiry_date': store.calendar.today.millisecondsSinceEpoch,
+      });
+      expect(store.memberStatus(store.rows('members').first), 'active');
+      await store.checkIn(member['id'] as int);
+      expect(store.openVisits.length, 1);
+    },
+  );
+
+  test('saves and check-ins refresh only affected tables', () async {
+    service.reads.clear();
+    await store.save('trainers', {
+      'name': 'Coach',
+      'phone': '03001112222',
+      'status': 'active',
+    });
+    expect(service.reads, ['trainers']);
+    service.reads.clear();
+    await store.checkIn(store.rows('members').first['id'] as int);
+    expect(service.reads, ['attendance']);
+    service.reads.clear();
+    final member = store.rows('members').first;
+    await store.save('payments', {
+      'member_id': member['id'],
+      'plan_id': member['plan_id'],
+      'amount': 5000.0,
+      'payment_date': DateTime.now().millisecondsSinceEpoch,
+      'status': 'completed',
+    }, renew: true);
+    expect(service.reads.toSet(), {'payments', 'members'});
+    expect(store.rows('trainers').first['name'], 'Coach');
+    expect(store.openVisits.length, 1);
+  });
+  test(
+    'version 4 database upgrades without losing completed receipt history',
+    () async {
+      final folder = await Directory.systemTemp.createTemp('fitguide-upgrade-');
+      final path = '${folder.path}/legacy.db';
+      final legacy = DatabaseService(name: path, factory: databaseFactoryFfi);
+      final old = GymStore(legacy);
+      await old.load();
+      await old.save('members', {
+        'name': 'Legacy',
+        'phone': '03009999999',
+        'status': 'active',
+      });
+      await old.save('payments', {
+        'member_id': old.rows('members').first['id'],
+        'amount': 5000.0,
+        'status': 'completed',
+        'payment_date': DateTime.now().millisecondsSinceEpoch,
+      });
+      final connection = await legacy.database;
+      await connection.execute(
+        'ALTER TABLE payments DROP COLUMN renewal_applied',
+      );
+      await connection.execute('PRAGMA user_version=4');
+      old.dispose();
+      await legacy.close();
+      final upgraded = DatabaseService(name: path, factory: databaseFactoryFfi);
+      try {
+        final connection = await upgraded.database;
+        expect(
+          (await connection.query('payments')).single['renewal_applied'],
+          1,
+        );
+        expect((await connection.query('members')).single['name'], 'Legacy');
+        expect(
+          (await connection.rawQuery('PRAGMA user_version'))
+              .single['user_version'],
+          5,
+        );
+        await upgraded.close();
+        final reopened = await upgraded.database;
+        expect((await reopened.query('payments')).single['renewal_applied'], 1);
+      } finally {
+        await upgraded.close();
+        await folder.delete(recursive: true);
+      }
+    },
+  );
+}
+
+class TrackingDatabaseService extends DatabaseService {
+  TrackingDatabaseService({required super.name, super.factory});
+  final reads = <String>[];
+  @override
+  Future<List<Map<String, Object?>>> readRecords(String table) async {
+    reads.add(table);
+    return super.readRecords(table);
+  }
 }

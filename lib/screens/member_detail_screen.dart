@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../core/entities.dart';
 import '../core/format.dart';
 import '../core/gym_store.dart';
@@ -52,7 +53,9 @@ class MemberDetailScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Member profile')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(
+          MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
+        ),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1050),
@@ -73,9 +76,9 @@ class MemberDetailScreen extends StatelessWidget {
                               children: [
                                 Text(
                                   member['name'] as String,
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.headlineMedium,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineMedium,
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
@@ -106,7 +109,9 @@ class MemberDetailScreen extends StatelessWidget {
                           Text(
                             store.label('membership_plans', member['plan_id']),
                           ),
-                          Text('Expires ${dateLabel(member['expiry_date'])}'),
+                          Text(
+                            'Expires ${store.dateLabel(member['expiry_date'])}',
+                          ),
                           Text(
                             'Pending fees: ${money(store.memberDue(memberId), store.currency)}',
                           ),
@@ -176,7 +181,7 @@ class MemberDetailScreen extends StatelessWidget {
                     _stat(
                       context,
                       'Member since',
-                      dateLabel(member['join_date']),
+                      store.dateLabel(member['join_date']),
                     ),
                   ],
                 ),
@@ -232,7 +237,7 @@ class MemberDetailScreen extends StatelessWidget {
                                     'Removed program',
                               ),
                               subtitle: Text(
-                                'Assigned ${dateLabel(a['assigned_date'])}',
+                                'Assigned ${store.dateLabel(a['assigned_date'])}',
                               ),
                               trailing: StatusPill(a['status'] as String),
                               onTap: workout == null
@@ -278,7 +283,7 @@ class MemberDetailScreen extends StatelessWidget {
                                     money(p['amount'], store.currency),
                                   ),
                                   subtitle: Text(
-                                    '${dateLabel(p['payment_date'])} • ${titleCase(p['payment_method'] as String? ?? 'cash')}',
+                                    '${store.dateLabel(p['payment_date'])} • ${titleCase(p['payment_method'] as String? ?? 'cash')}',
                                   ),
                                   trailing: StatusPill(p['status'] as String),
                                   onTap: () =>
@@ -305,7 +310,7 @@ class MemberDetailScreen extends StatelessWidget {
                                     color: AppTheme.green,
                                   ),
                                   title: Text(
-                                    dateLabel(
+                                    store.dateLabel(
                                       v['check_in'],
                                       'd MMM yyyy • h:mm a',
                                     ),
@@ -313,7 +318,7 @@ class MemberDetailScreen extends StatelessWidget {
                                   subtitle: Text(
                                     v['check_out'] == null
                                         ? 'Currently checked in'
-                                        : 'Checked out ${dateLabel(v['check_out'], 'h:mm a')}',
+                                        : 'Checked out ${store.dateLabel(v['check_out'], 'h:mm a')}',
                                   ),
                                   trailing: v['check_out'] == null
                                       ? TextButton(
@@ -339,7 +344,7 @@ class MemberDetailScreen extends StatelessWidget {
   }
 
   Widget _stat(BuildContext context, String label, String value) => SizedBox(
-    width: 245,
+    width: MediaQuery.sizeOf(context).width < 360 ? 220 : 245,
     child: SectionCard(
       padding: 20,
       child: Column(
@@ -353,7 +358,7 @@ class MemberDetailScreen extends StatelessWidget {
     ),
   );
   Widget _detail(BuildContext context, String label, Object? value) => SizedBox(
-    width: 250,
+    width: MediaQuery.sizeOf(context).width < 360 ? 220 : 250,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -370,7 +375,7 @@ class MemberDetailScreen extends StatelessWidget {
     RecordData payment,
   ) {
     final text =
-        '${store.gymName}\nPAYMENT RECEIPT #${payment['id']}\n\nMember: ${member['name']}\nPlan: ${store.label('membership_plans', payment['plan_id'])}\nAmount: ${money(payment['amount'], store.currency)}\nDate: ${dateLabel(payment['payment_date'])}\nStatus: ${titleCase(payment['status'] as String)}\nMethod: ${titleCase(payment['payment_method'] as String? ?? 'cash')}\nReference: ${payment['transaction_id'] ?? '—'}\n';
+        '${store.gymName}\nPAYMENT RECEIPT #${payment['id']}\n\nMember: ${member['name']}\nPlan: ${store.label('membership_plans', payment['plan_id'])}\nAmount: ${money(payment['amount'], store.currency)}\nDate: ${store.dateLabel(payment['payment_date'])}\nStatus: ${titleCase(payment['status'] as String)}\nMethod: ${titleCase(payment['payment_method'] as String? ?? 'cash')}\nReference: ${payment['transaction_id'] ?? '—'}\n';
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(

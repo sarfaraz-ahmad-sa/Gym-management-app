@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:math';
+
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'db_service.dart';
 import 'cloud_api.dart';
+
 import 'package:sqflite/sqflite.dart';
 
 class AuthService extends ChangeNotifier {
@@ -12,11 +15,39 @@ class AuthService extends ChangeNotifier {
     : api = cloud ?? CloudApi(),
       _localDb = database ?? DatabaseService.instance,
       cloudMode = database == null {
+    api.onSessionExpired = _expireCloudSession;
     initialize();
   }
   final DatabaseService _localDb;
   final bool cloudMode;
   final CloudApi api;
+  bool _disposed = false;
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    api.onSessionExpired = null;
+    api.close();
+    super.dispose();
+  }
+
+  Future<void> _expireCloudSession() async {
+    loggedIn = false;
+    demo = false;
+    needsSetup = false;
+    error = null;
+    workspaces = [];
+    workspaceId = null;
+    notifyListeners();
+    await (await SharedPreferences.getInstance()).remove(
+      'fitguide.cloudSession',
+    );
+  }
+
   List<Map<String, dynamic>> workspaces = [];
   String? workspaceId;
   DatabaseService get db => cloudMode && workspaceId != null

@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
+
 import '../core/entities.dart';
 import '../core/format.dart';
 import '../core/gym_store.dart';
@@ -47,9 +49,21 @@ Future<int?> chooseReference(
               )
               .toList();
           return SizedBox(
-            height: MediaQuery.sizeOf(ctx).height * .7,
+            height:
+                (MediaQuery.sizeOf(ctx).height * .7 +
+                        MediaQuery.viewInsetsOf(ctx).bottom)
+                    .clamp(
+                      0.0,
+                      MediaQuery.sizeOf(ctx).height -
+                          MediaQuery.paddingOf(ctx).top,
+                    ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                8,
+                20,
+                20 + MediaQuery.viewInsetsOf(ctx).bottom,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -135,7 +149,7 @@ class _RecordEditorState extends State<RecordEditor> {
           f.type == 'date' &&
           f.key != 'expiry_date' &&
           f.key != 'purchase_date') {
-        value = dateOnly(DateTime.now()).millisecondsSinceEpoch;
+        value = widget.store.calendar.today.millisecondsSinceEpoch;
       }
       _values[f.key] = value;
       if (!['date', 'reference', 'select'].contains(f.type)) {
@@ -225,10 +239,13 @@ class _RecordEditorState extends State<RecordEditor> {
     final plan = widget.store.find('membership_plans', id);
     if (plan == null) return;
     if (widget.spec.table == 'members' && _isNew) {
-      _values['expiry_date'] =
-          (asDate(_values['join_date']) ?? dateOnly(DateTime.now()))
-              .add(Duration(days: plan['duration_days'] as int))
-              .millisecondsSinceEpoch;
+      _values['expiry_date'] = widget.store.calendar
+          .addDays(
+            widget.store.calendar.fromTimestamp(_values['join_date']) ??
+                widget.store.calendar.today,
+            plan['duration_days'] as int,
+          )
+          .millisecondsSinceEpoch;
     }
     if (widget.spec.table == 'payments') {
       _controllers['amount']!.text = plan['price'].toString();
@@ -323,7 +340,9 @@ class _RecordEditorState extends State<RecordEditor> {
           onTap: _saving
               ? null
               : () async {
-                  final value = asDate(_values[f.key]) ?? DateTime.now();
+                  final value =
+                      widget.store.calendar.fromTimestamp(_values[f.key]) ??
+                      widget.store.calendar.today;
                   final chosen = await showDatePicker(
                     context: context,
                     initialDate: value,
@@ -332,7 +351,9 @@ class _RecordEditorState extends State<RecordEditor> {
                   );
                   if (chosen != null && mounted) {
                     setState(() {
-                      _values[f.key] = chosen.millisecondsSinceEpoch;
+                      _values[f.key] = widget.store.calendar
+                          .atDate(chosen)
+                          .millisecondsSinceEpoch;
                       field.didChange(_values[f.key]);
                       if (f.key == 'join_date' && _isNew) {
                         _planChanged(_values['plan_id']);
@@ -357,7 +378,7 @@ class _RecordEditorState extends State<RecordEditor> {
             child: Text(
               _values[f.key] == null
                   ? 'Select date'
-                  : dateLabel(_values[f.key]),
+                  : widget.store.dateLabel(_values[f.key]),
             ),
           ),
         ),
@@ -432,7 +453,9 @@ class _RecordEditorState extends State<RecordEditor> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(
+              MediaQuery.sizeOf(context).width < 600 ? 18 : 24,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -478,7 +501,8 @@ class _RecordEditorState extends State<RecordEditor> {
                                   child: _field(f),
                                 ),
                               if (widget.spec.table == 'payments' &&
-                                  widget.record?['status'] != 'completed')
+                                  widget.record?['status'] != 'completed' &&
+                                  widget.record?['renewal_applied'] != 1)
                                 SizedBox(
                                   width: width,
                                   child: CheckboxListTile(

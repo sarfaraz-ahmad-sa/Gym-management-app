@@ -1,0 +1,24 @@
+FitGuide - matched client, macOS Internet access and iPhone-style light appearance
+
+Apply this patch to your EXISTING /Users/imac/fitguide project. Extract the ZIP contents directly into the project folder, overwriting all included files. The lib and macos folders must be under /Users/imac/fitguide, not under another nested folder. Both auth_service.dart and cloud_api.dart MUST come from this patch.
+
+Terminal (if the ZIP is in Downloads):
+cd /Users/imac/fitguide
+unzip -o ~/Downloads/FitGuide_Light_Theme_Login_Fix.zip -d .
+flutter clean
+flutter pub get
+flutter run -d macos
+
+For iPad: connect and unlock it, trust the Mac, enable Developer Mode, then run flutter devices. Use flutter run -d DEVICE_ID with its listed ID. An iPad is not listed in the latest supplied log, so choosing macOS runs the Mac app. Your existing Xcode development team is preserved; this patch does not contain the iOS project/signing files.
+
+Fixes:
+- Matched auth_service.dart and cloud_api.dart, including onSessionExpired and close().
+- macOS outgoing Internet permission for Debug/Profile and Release. Existing sandbox, JIT and incoming debug permissions remain.
+- Clear network, timeout, HTTPS and HTTP response errors on sign-in.
+- iPhone-style light palette: grouped grey background, white rounded cards, blue accents, readable labels and pale dashboard/login panels.
+- Starts light once after this appearance update; subsequent manual light/dark choices are remembered.
+- All earlier client billing/expiry/calendar and responsive dashboard changes are included.
+
+The database, account credentials and backend URL are not reset by this patch. Existing local-only accounts are still distinct from cloud accounts. The previously supplied billing/expiry backend update remains required; no server files are in this client patch.
+
+Verification: 11 related Dart auth/API/session checks pass, including the real Node API integration with SQLite/platform adapters. Analysis of the auth/API business source passes. Entitlements parse and their required keys are checked. Dart formatting parses the UI source. This environment cannot run Flutter/Xcode; native build and visual device checks must run on your Mac.

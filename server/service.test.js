@@ -7,7 +7,7 @@ import { createClient } from "@libsql/client";
 import { migrate } from "./schema.js";
 import { createService } from "./service.js";
 
-async function fixture() {
+async function fixture(options = {}) {
   const dir = mkdtempSync(join(tmpdir(), "fitguide-api-test-"));
   const db = createClient({ url: "file:" + join(dir, "test.db") });
   const originalClose = db.close.bind(db);
@@ -16,7 +16,7 @@ async function fixture() {
     rmSync(dir, { recursive: true, force: true });
   };
   await migrate(db);
-  const call = createService(db, { SETUP_CODE: "test-private-setup" });
+  const call = createService(db, { SETUP_CODE: "test-private-setup" }, options);
   const a = await call(
     {
       action: "signup",
@@ -391,4 +391,76 @@ test("payment retry with the same operation ID cannot create a duplicate receipt
   } finally {
     f.db.close();
   }
+});
+
+test('linked receipts prevent invoice reassignment and the backup remains restorable', async () => {
+  const f = await fixture();
+  try {
+    await f.request('save', {table: 'members', row: {name: 'Second', phone: '03005558888', status: 'active', join_date: Date.now()}});
+    const second = (await f.request('records', {table: 'members'})).rows.find(m => m.id !== f.member.id);
+    await f.request('generateFees', {period: '2026-10', dueDate: Date.now()});
+    const invoice = (await f.request('records', {table: 'fee_invoices'})).rows[0];
+    await f.request('save', {table: 'payments', row: {member_id: f.member.id, invoice_id: invoice.id, amount: 1000, payment_date: Date.now(), status: 'pending'}});
+    await assert.rejects(f.request('save', {table: 'fee_invoices', row: {...invoice, member_id: second.id}}), /linked payments cannot change member/);
+    const receipt = (await f.request('records', {table: 'payments'})).rows[0];
+    await f.request('save', {table: 'payments', row: {...receipt, status: 'completed'}});
+    await assert.rejects(f.request('save', {table: 'fee_invoices', row: {...invoice, member_id: second.id}}), /linked payments cannot change member/);
+    const data = {};
+    for (const table of ['membership_plans','trainers','members','fee_invoices','attendance','payments','inventory_items','workout_plans','member_workout_assignments']) data[table] = (await f.request('records', {table})).rows;
+    data.settings = [{key: 'gym_name', value: 'Restored'}];
+    await f.call({action: 'restore', workspaceId: f.b.workspaces[0].id, backup: {format: 'fitguide-backup', version: 1, tables: data}}, f.b.token);
+    assert.equal((await f.request('records', {table: 'fee_invoices'})).rows[0].member_id, f.member.id);
+  } finally {f.db.close();}
+});
+
+test('renewal survives payment status cycles, attempted flag resets and backup restore', async () => {
+  const f = await fixture();
+  try {
+    await f.request('save', {table: 'payments', renew: true, row: {member_id: f.member.id, plan_id: f.plan.id, amount: 3000, status: 'completed', payment_date: Date.now()}});
+    const expiry = (await f.request('records', {table: 'members'})).rows[0].expiry_date;
+    let receipt = (await f.request('records', {table: 'payments'})).rows[0];
+    assert.equal(receipt.renewal_applied, 1);
+    await f.request('save', {table: 'payments', row: {...receipt, status: 'pending', renewal_applied: 0}});
+    await f.request('save', {table: 'payments', renew: true, row: {...receipt, status: 'completed', renewal_applied: 0}});
+    assert.equal((await f.request('records', {table: 'members'})).rows[0].expiry_date, expiry);
+    const data = {};
+    for (const table of ['membership_plans','trainers','members','fee_invoices','attendance','payments','inventory_items','workout_plans','member_workout_assignments']) data[table] = (await f.request('records', {table})).rows;
+    data.settings = [{key:'gym_name',value:'Alpha Gym'},{key:'timezone',value:'Asia/Karachi'}];
+    await f.request('restore', {backup: {format: 'fitguide-backup', version: 1, tables: data}});
+    receipt = (await f.request('records', {table:'payments'})).rows[0];
+    await f.request('save', {table:'payments', row:{...receipt,status:'pending'}});
+    await f.request('save', {table:'payments', renew:true,row:{...receipt,status:'completed'}});
+    assert.equal((await f.request('records', {table:'members'})).rows[0].expiry_date, expiry);
+    await assert.rejects(f.request('save', {table:'payments',row:{...receipt,plan_id:null}}), /cannot change member or plan/);
+  } finally {f.db.close();}
+});
+
+test('workspace calendar permits the entire Pakistan expiry day and rejects the following day', async () => {
+  let current = Date.parse('2026-10-08T17:59:00Z'); // 10:59 pm Pakistan.
+  const f = await fixture({now: () => current});
+  try {
+    await f.request('save', {table:'members',row:{...f.member,join_date:1,expiry_date:Date.parse('2026-10-07T19:00:00Z')}});
+    await f.request('checkIn', {memberId:f.member.id});
+    const visit = (await f.request('records',{table:'attendance'})).rows[0];
+    await f.request('checkOut',{id:visit.id});
+    current = Date.parse('2026-10-08T19:00:00Z');
+    await assert.rejects(f.request('checkIn',{memberId:f.member.id}),/valid membership/);
+    await assert.rejects(f.request('settings',{values:{timezone:'MadeUp/Zone'}}),/valid IANA timezone/);
+  } finally {f.db.close();}
+});
+
+test('migration preserves legacy completed receipts and is safe to rerun', async () => {
+  const f = await fixture();
+  try {
+    await f.db.execute('ALTER TABLE payments DROP COLUMN renewal_applied');
+    await f.request('save',{table:'payments',row:{member_id:f.member.id,plan_id:f.plan.id,amount:3000,status:'completed',payment_date:Date.now()}});
+    await migrate(f.db);
+    await migrate(f.db);
+    let receipt = (await f.request('records',{table:'payments'})).rows[0];
+    assert.equal(receipt.renewal_applied,1);
+    const expiry = (await f.request('records',{table:'members'})).rows[0].expiry_date;
+    await f.request('save',{table:'payments',row:{...receipt,status:'pending'}});
+    await f.request('save',{table:'payments',renew:true,row:{...receipt,status:'completed'}});
+    assert.equal((await f.request('records',{table:'members'})).rows[0].expiry_date,expiry);
+  } finally {f.db.close();}
 });

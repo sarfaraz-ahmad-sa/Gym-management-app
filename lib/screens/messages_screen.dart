@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../core/message_templates.dart';
+
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../core/format.dart';
 import '../core/gym_store.dart';
 import '../core/theme.dart';
@@ -197,8 +200,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
           child: followups.isEmpty
               ? const EmptyState(
                   title: 'All recorded fees are up to date',
-                  message:
-                      'Members with unpaid invoices or pending receipts appear here.',
+                  message: 'Members with unpaid invoices or pending receipts appear here.',
                 )
               : Column(
                   children: followups
@@ -208,7 +210,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           leading: PersonAvatar(m['name'] as String),
                           title: Text(m['name'] as String),
                           subtitle: Text(
-                            'Pending ${money(store.memberDue(m['id'] as int), store.currency)} • since ${dateLabel(store.dueSince(m['id'] as int)?.millisecondsSinceEpoch)}',
+                            'Pending ${money(store.memberDue(m['id'] as int), store.currency)} • since ${store.dateLabel(store.dueSince(m['id'] as int)?.millisecondsSinceEpoch)}',
                           ),
                           trailing: TextButton(
                             onPressed: () => setState(() {

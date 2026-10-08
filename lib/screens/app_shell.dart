@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../core/entities.dart';
 import '../core/format.dart';
 import '../core/gym_store.dart';
@@ -79,8 +80,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final store = context.watch<GymStore>();
     final auth = context.watch<AuthService>();
     final width = MediaQuery.sizeOf(context).width;
-    final desktop = width >= 1100;
-    final rail = width >= 760;
+    final desktop = width >= 1180;
+    final rail = width >= 720;
     final scheme = Theme.of(context).colorScheme;
     if (store.loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -149,7 +150,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           children: [
             if (rail)
               Container(
-                width: desktop ? 238 : 86,
+                width: desktop ? 244 : 86,
                 decoration: BoxDecoration(
                   color: scheme.surface,
                   border: Border(
@@ -208,7 +209,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 1400),
                             child: Padding(
-                              padding: EdgeInsets.all(width < 600 ? 18 : 30),
+                              padding: EdgeInsets.all(width < 600 ? 16 : 26),
                               child: AnimatedSwitcher(
                                 duration: const Duration(milliseconds: 180),
                                 child: KeyedSubtree(
@@ -276,9 +277,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       const SizedBox(height: 4),
                       Text(
                         'Owner workspace',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(fontSize: 10),
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(fontSize: 10),
                       ),
                     ],
                   ),
@@ -313,9 +313,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                     color: _selected == item.$1
                         ? AppTheme.blue.withValues(alpha: .1)
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(30),
+                    borderRadius: BorderRadius.circular(14),
                     child: InkWell(
-                      borderRadius: BorderRadius.circular(30),
+                      borderRadius: BorderRadius.circular(14),
                       onTap: () {
                         if (drawer) Navigator.pop(context);
                         _navigate(item.$1);
@@ -335,9 +335,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                               size: 21,
                               color: _selected == item.$1
                                   ? AppTheme.blue
-                                  : Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
+                                  : Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
                             ),
                             if (expanded) ...[
                               const SizedBox(width: 14),
@@ -353,9 +353,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                                         : FontWeight.w500,
                                     color: _selected == item.$1
                                         ? AppTheme.blue
-                                        : Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
+                                        : Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
                                   ),
                                 ),
                               ),
@@ -404,9 +404,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                         const SizedBox(height: 4),
                         Text(
                           'Club owner',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(fontSize: 10),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(fontSize: 10),
                         ),
                       ],
                     ),
@@ -429,15 +428,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Widget _topbar(GymStore store, AuthService auth, bool rail) {
     final width = MediaQuery.sizeOf(context).width;
     return Container(
-      height: 76,
-      padding: EdgeInsets.symmetric(horizontal: rail ? 30 : 16),
+      constraints: const BoxConstraints(minHeight: 72),
+      padding: EdgeInsets.symmetric(horizontal: rail ? 26 : 12, vertical: 12),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         border: Border(
           bottom: BorderSide(
-            color: Theme.of(
-              context,
-            ).colorScheme.outlineVariant.withValues(alpha: .5),
+            color: Theme.of(context).colorScheme.outlineVariant
+                .withValues(alpha: .5),
           ),
         ),
       ),
@@ -584,7 +582,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                           leading: PersonAvatar(m['name'] as String),
                           title: Text(m['name'] as String),
                           subtitle: Text(
-                            '${titleCase(store.memberStatus(m))} • ${dateLabel(m['expiry_date'])}',
+                            '${titleCase(store.memberStatus(m))} • ${store.dateLabel(m['expiry_date'])}',
                           ),
                           onTap: () {
                             Navigator.pop(ctx);

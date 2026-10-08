@@ -13,6 +13,8 @@ import 'package:fitguide/widgets/record_editor.dart';
 import 'package:fitguide/screens/fees_screen.dart';
 import 'package:fitguide/screens/settings_screen.dart';
 import 'package:fitguide/screens/messages_screen.dart';
+import 'package:fitguide/screens/attendance_screen.dart';
+import 'package:fitguide/screens/records_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -52,6 +54,9 @@ void main() {
     const Size(1440, 1000),
     const Size(390, 844),
     const Size(320, 740),
+    const Size(768, 1024),
+    const Size(834, 1194),
+    const Size(1024, 768),
   ]) {
     testWidgets(
       'responsive workspace ${size.width.toInt()}px has working navigation',
@@ -64,10 +69,14 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Welcome to ${store.gymName}'), findsOneWidget);
         expect(tester.takeException(), isNull);
-        if (size.width < 760) {
+        if (size.width < 720) {
           await tester.tap(find.byType(NavigationDestination).at(1));
         } else {
-          await tester.tap(find.text('Members').first);
+          if (size.width < 1180) {
+            await tester.tap(find.byTooltip('Members'));
+          } else {
+            await tester.tap(find.text('Members').first);
+          }
         }
         await tester.pumpAndSettle();
         expect(find.text('Add member'), findsOneWidget);
@@ -123,6 +132,15 @@ void main() {
     const FeesScreen(),
     const SettingsScreen(),
     const MessagesScreen(),
+    const AttendanceScreen(),
+    ...[
+      'members',
+      'payments',
+      'membership_plans',
+      'trainers',
+      'workout_plans',
+      'inventory_items',
+    ].map((table) => RecordsScreen(table: table)),
   ]) {
     testWidgets('${screen.runtimeType} is usable on a 390px phone', (
       tester,

@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id TEXT NOT NULL REFERENCES workspaces(id), member_id INTEGER NOT NULL REFERENCES members(id),
         plan_id INTEGER REFERENCES membership_plans(id), amount REAL NOT NULL,
         payment_date INTEGER NOT NULL, status TEXT NOT NULL,
-        payment_method TEXT, transaction_id TEXT, invoice_id INTEGER REFERENCES fee_invoices(id));
+        payment_method TEXT, transaction_id TEXT, invoice_id INTEGER REFERENCES fee_invoices(id), renewal_applied INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS inventory_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id TEXT NOT NULL REFERENCES workspaces(id), name TEXT NOT NULL, category TEXT NOT NULL,
         quantity INTEGER NOT NULL, condition TEXT, purchase_price REAL,

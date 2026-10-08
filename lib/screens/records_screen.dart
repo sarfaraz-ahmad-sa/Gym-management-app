@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../core/entities.dart';
 import '../core/format.dart';
 import '../core/gym_store.dart';
@@ -21,7 +22,7 @@ String recordValue(
     return titleCase(store.memberStatus(row));
   }
   if (f.type == 'reference') return store.label(f.reference!, v);
-  if (f.type == 'date') return dateLabel(v);
+  if (f.type == 'date') return store.dateLabel(v);
   if (f.type == 'money') return money(v, store.currency);
   if (key == 'duration_days') return '$v days';
   if (key == 'duration_weeks') return '$v weeks';
@@ -353,9 +354,9 @@ class _RecordsScreenState extends State<RecordsScreen> {
                                                     row['member_id'],
                                                   )
                                                 : row['name'] as String,
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.titleMedium,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium,
                                           ),
                                         ),
                                         _menu(store, row),
@@ -377,9 +378,9 @@ class _RecordsScreenState extends State<RecordsScreen> {
                                                       row,
                                                       key,
                                                     ),
-                                                    style: Theme.of(
-                                                      context,
-                                                    ).textTheme.bodySmall,
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodySmall,
                                                   ),
                                           )
                                           .toList(),
@@ -457,9 +458,9 @@ class _RecordsScreenState extends State<RecordsScreen> {
                                                       widget.table == 'payments'
                                                           ? '${row['transaction_id'] ?? 'Receipt #${row['id']}'}'
                                                           : '${row['phone'] ?? ''}',
-                                                      style: Theme.of(
-                                                        context,
-                                                      ).textTheme.bodySmall,
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .bodySmall,
                                                     ),
                                                   ],
                                                 ),

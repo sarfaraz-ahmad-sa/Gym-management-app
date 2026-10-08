@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+
 import 'format.dart';
 import 'gym_store.dart';
 
@@ -48,19 +49,23 @@ String memberMessage(GymStore store, RecordData member, String type) {
     'member': member['name'].toString(),
     'workspace': store.gymName,
     'pending_amount': money(store.memberDue(id), store.currency),
-    'due_date': since == null ? '—' : dateLabel(since.millisecondsSinceEpoch),
+    'due_date': since == null
+        ? '—'
+        : store.dateLabel(since.millisecondsSinceEpoch),
     'due_month': since == null
         ? 'no pending fee'
         : DateFormat('MMMM yyyy').format(since),
     'last_payment_line': last == null
         ? 'Abhi tak koi completed payment record nahi hai.'
-        : 'Aapki last payment ${money(last['amount'], store.currency)} thi, ${dateLabel(last['payment_date'])} ko.',
+        : 'Aapki last payment ${money(last['amount'], store.currency)} thi, ${store.dateLabel(last['payment_date'])} ko.',
     'last_payment_amount': last == null
         ? '—'
         : money(last['amount'], store.currency),
-    'last_payment_date': last == null ? '—' : dateLabel(last['payment_date']),
+    'last_payment_date': last == null
+        ? '—'
+        : store.dateLabel(last['payment_date']),
     'plan': store.label('membership_plans', member['plan_id']),
-    'expiry_date': dateLabel(member['expiry_date']),
+    'expiry_date': store.dateLabel(member['expiry_date']),
     'tagline': store.setting('message_tagline', defaultTagline),
   };
   // One-pass substitution prevents member names containing placeholders from being interpreted.

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../core/format.dart';
 import '../core/gym_store.dart';
 import '../core/theme.dart';
@@ -28,10 +29,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<GymStore>();
-    final today = dateOnly(DateTime.now());
+    final today = store.calendar.today;
     final rows =
         store.rows('attendance').where((r) {
-          final date = dateOnly(asDate(r['check_in'])!);
+          final date = store.calendar.day(
+            store.calendar.fromTimestamp(r['check_in'])!,
+          );
           return (_filter != 'today' || date == today) &&
               (_filter != 'inside' || r['check_out'] == null) &&
               (_date == null || date == _date) &&
@@ -44,7 +47,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         );
     final todayCount = store
         .rows('attendance')
-        .where((r) => dateOnly(asDate(r['check_in'])!) == today)
+        .where(
+          (r) =>
+              store.calendar.day(
+                store.calendar.fromTimestamp(r['check_in'])!,
+              ) ==
+              today,
+        )
         .map((r) => r['member_id'])
         .toSet()
         .length;
@@ -143,7 +152,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       );
                       if (chosen != null) {
                         setState(() {
-                          _date = chosen;
+                          _date = store.calendar.atDate(chosen);
                           _filter = 'all';
                           _limit = 30;
                         });
@@ -153,7 +162,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     label: Text(
                       _date == null
                           ? 'Choose date'
-                          : dateLabel(_date!.millisecondsSinceEpoch),
+                          : store.dateLabel(_date!.millisecondsSinceEpoch),
                     ),
                   ),
                   if (_date != null)
@@ -193,23 +202,23 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 children: [
                                   Text(
                                     name,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium,
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    '${dateLabel(r['check_in'], 'd MMM • h:mm a')}  •  ${duration < 0 ? 0 : duration} min',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    '${store.dateLabel(r['check_in'], 'd MMM • h:mm a')}  •  ${duration < 0 ? 0 : duration} min',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall,
                                   ),
                                   if (end != null)
                                     Text(
-                                      'Out ${dateLabel(r['check_out'], 'h:mm a')}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      'Out ${store.dateLabel(r['check_out'], 'h:mm a')}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
                                     ),
                                 ],
                               ),

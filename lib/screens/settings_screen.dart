@@ -1,12 +1,17 @@
 import 'dart:convert';
+
 import 'package:file_selector/file_selector.dart';
+
 import '../core/message_templates.dart';
 import '../widgets/workspace_logo.dart';
 import '../services/workspace_export.dart';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../core/gym_store.dart';
 import '../core/theme.dart';
+import '../core/workspace_calendar.dart';
 import '../services/auth_service.dart';
 import '../services/export_service.dart';
 import '../widgets/common.dart';
@@ -19,6 +24,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _gym = TextEditingController(), _country = TextEditingController();
+  final _timezone = TextEditingController();
   final _details = <String, TextEditingController>{
     for (final key in [
       'gym_address',
@@ -41,6 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final store = context.read<GymStore>();
       _gym.text = store.gymName;
       _currency = store.currency;
+      _timezone.text = store.calendar.timeZone;
       _country.text = '92';
       for (final entry in _details.entries) {
         final fallback = switch (entry.key) {
@@ -63,6 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _gym.dispose();
     _country.dispose();
+    _timezone.dispose();
     for (final c in _details.values) {
       c.dispose();
     }
@@ -389,14 +397,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: 'Phone country code',
-                  helperText:
-                      'Used for WhatsApp numbers starting with 0. Example: 92 for Pakistan.',
+                  helperText: 'Used for WhatsApp numbers starting with 0. Example: 92 for Pakistan.',
                 ),
               ),
               const SizedBox(height: 18),
               Text(
                 'Changing currency updates labels only; amounts are not converted.',
                 style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 18),
+              TextField(
+                controller: _timezone,
+                decoration: const InputDecoration(
+                  labelText: 'Workspace timezone',
+                  hintText: 'Asia/Karachi',
+                  helperText:
+                      'IANA timezone used for expiry, check-in and reports.',
+                  prefixIcon: Icon(Icons.public_outlined),
+                ),
               ),
               const SizedBox(height: 18),
               FilledButton(
@@ -406,20 +424,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (_gym.text.trim().isEmpty) {
                           throw StateError('Enter your club name.');
                         }
-                        if (!RegExp(
-                          r'^[1-9]\d{0,3}$',
-                        ).hasMatch(_country.text)) {
+                        try {
+                          WorkspaceCalendar(_timezone.text.trim());
+                        } catch (_) {
+                          throw StateError(
+                            'Enter a valid IANA timezone, such as Asia/Karachi.',
+                          );
+                        }
+                        if (!RegExp(r'^[1-9]\d{0,3}$')
+                            .hasMatch(_country.text)) {
                           throw StateError('Enter a valid country code.');
                         }
                         await store.db.setSettings({
                           'gym_name': _gym.text.trim(),
                           'currency': _currency,
                           'country_code': _country.text,
+                          'timezone': _timezone.text.trim(),
                           ..._details.map(
                             (key, c) => MapEntry(key, c.text.trim()),
                           ),
                         });
-                        await store.load();
+                        await store.load(changedTables: {});
                       }, 'Workspace settings saved'),
                 child: Text(_busy ? 'Saving…' : 'Save changes'),
               ),
