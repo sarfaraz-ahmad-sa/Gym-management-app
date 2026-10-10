@@ -37,18 +37,9 @@ class MemberDetailScreen extends StatelessWidget {
         ),
       );
     }
-    final payments = store
-        .rows('payments')
-        .where((r) => r['member_id'] == memberId)
-        .toList();
-    final visits = store
-        .rows('attendance')
-        .where((r) => r['member_id'] == memberId)
-        .toList();
-    final assignments = store
-        .rows('member_workout_assignments')
-        .where((r) => r['member_id'] == memberId)
-        .toList();
+    final payments = store.byMember('payments', memberId);
+    final visits = store.byMember('attendance', memberId);
+    final assignments = store.byMember('member_workout_assignments', memberId);
     final open = visits.where((v) => v['check_out'] == null).firstOrNull;
     return Scaffold(
       appBar: AppBar(title: const Text('Member profile')),

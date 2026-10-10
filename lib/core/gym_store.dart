@@ -5,6 +5,7 @@ import 'format.dart';
 import 'demo_data.dart';
 import 'fee_ledger.dart';
 import 'workspace_calendar.dart';
+import 'dashboard_analytics.dart';
 
 import 'package:intl/intl.dart';
 
@@ -36,6 +37,7 @@ class GymStore extends ChangeNotifier {
   }
 
   bool loading = true;
+  int loadCount = 0; // Incremented on each load - use to detect changes
   String? error;
   String gymName = 'My fitness club', currency = 'PKR';
   String setting(String key, [String fallback = '']) =>
@@ -50,13 +52,62 @@ class GymStore extends ChangeNotifier {
   }
 
   final Map<String, List<RecordData>> _records = {};
+  final Map<String, Map<dynamic, RecordData>> _recordIndex = {}; // O(1) lookups
+  final Map<String, Map<int, List<RecordData>>> _byMemberIndex = {}; // O(n) → O(1) by member_id
   FeeLedger _ledger = FeeLedger([], []);
+  
+  // Cached analytics - invalidated on data change
+  DashboardAnalytics? _analytics7;
+  DashboardAnalytics? _analytics30;
+  DashboardAnalytics? _analytics90;
+  
+  // Cached lazy getters
+  List<RecordData>? _cachedExpiring;
+  List<RecordData>? _cachedOverdue;
+  List<RecordData>? _cachedOpenVisits;
+  
   List<RecordData> rows(String table) => _records[table] ?? [];
+
+  /// Get all records for a specific member_id - O(1) lookup
+  List<RecordData> byMember(String table, int memberId) {
+    return _byMemberIndex[table]?[memberId] ?? [];
+  }
+
   RecordData? find(String table, Object? id) {
+    if (id == null) return null;
+    final index = _recordIndex[table];
+    if (index != null) return index[id];
+    // Fallback to linear search if index not built
     for (final row in rows(table)) {
       if (row['id'] == id) return row;
     }
     return null;
+  }
+  
+  /// Get cached analytics for specified days (7, 30, or 90)
+  DashboardAnalytics analytics({int days = 30}) {
+    switch (days) {
+      case 7:
+        _analytics7 ??= DashboardAnalytics(this, days: 7);
+        return _analytics7!;
+      case 90:
+        _analytics90 ??= DashboardAnalytics(this, days: 90);
+        return _analytics90!;
+      case 30:
+      default:
+        _analytics30 ??= DashboardAnalytics(this, days: 30);
+        return _analytics30!;
+    }
+  }
+  
+  void _invalidateCache() {
+    _analytics7 = null;
+    _analytics30 = null;
+    _analytics90 = null;
+    _cachedExpiring = null;
+    _cachedOverdue = null;
+    _cachedOpenVisits = null;
+    _recordIndex.clear();
   }
 
   String label(String table, Object? id) {
@@ -129,13 +180,49 @@ class GymStore extends ChangeNotifier {
         gymName = await db.setting('gym_name') ?? 'My fitness club';
         currency = await db.setting('currency') ?? 'PKR';
       }
-      if (changedTables == null) _records.clear();
+      if (changedTables == null) {
+        _records.clear();
+        _invalidateCache(); // Full reload - invalidate all caches
+      } else {
+        // Partial reload - only invalidate affected tables
+        for (final table in changedTables) {
+          _recordIndex.remove(table);
+        }
+        _analytics7 = null;
+        _analytics30 = null;
+        _analytics90 = null;
+        _cachedExpiring = null;
+        _cachedOverdue = null;
+        _cachedOpenVisits = null;
+      }
       _records.addAll(next);
+      
+      // Build index for O(1) lookups
+      for (final table in _records.keys) {
+        final index = <dynamic, RecordData>{};
+        for (final row in _records[table]!) {
+          final id = row['id'];
+          if (id != null) index[id] = row;
+        }
+        _recordIndex[table] = index;
+        
+        // Build member_id index for fast lookups
+        final byMember = <int, List<RecordData>>{};
+        for (final row in _records[table]!) {
+          final mid = row['member_id'] as int?;
+          if (mid != null) {
+            byMember.putIfAbsent(mid, () => []).add(row);
+          }
+        }
+        if (byMember.isNotEmpty) _byMemberIndex[table] = byMember;
+      }
+      
       _ledger = FeeLedger(rows('fee_invoices'), rows('payments'));
     } catch (_) {
       error = 'Unable to load workspace. Please retry.';
     }
     loading = false;
+    loadCount++; // Notify observers data changed
     notifyListeners();
   }
 
@@ -432,18 +519,31 @@ class GymStore extends ChangeNotifier {
             date.isBefore(end);
       })
       .fold(0.0, (total, p) => total + (p['amount'] as num).toDouble());
-  List<RecordData> get expiring =>
-      rows('members').where((m) {
-        final expiry = calendar.fromTimestamp(m['expiry_date']);
-        return memberStatus(m) == 'active' &&
-            expiry != null &&
-            !expiry.isBefore(calendar.today) &&
-            expiry.isBefore(calendar.addDays(calendar.today, 8));
-      }).toList()..sort(
+  
+  /// Cached: members expiring within 8 days
+  List<RecordData> get expiring {
+    _cachedExpiring ??= rows('members').where((m) {
+      final expiry = calendar.fromTimestamp(m['expiry_date']);
+      return memberStatus(m) == 'active' &&
+          expiry != null &&
+          !expiry.isBefore(calendar.today) &&
+          expiry.isBefore(calendar.addDays(calendar.today, 8));
+    }).toList()
+      ..sort(
         (a, b) => (a['expiry_date'] as int).compareTo(b['expiry_date'] as int),
       );
-  List<RecordData> get overdue =>
-      rows('members').where((m) => memberStatus(m) == 'expired').toList();
-  List<RecordData> get openVisits =>
-      rows('attendance').where((r) => r['check_out'] == null).toList();
+    return _cachedExpiring!;
+  }
+  
+  /// Cached: expired members
+  List<RecordData> get overdue {
+    _cachedOverdue ??= rows('members').where((m) => memberStatus(m) == 'expired').toList();
+    return _cachedOverdue!;
+  }
+  
+  /// Cached: members currently checked in
+  List<RecordData> get openVisits {
+    _cachedOpenVisits ??= rows('attendance').where((r) => r['check_out'] == null).toList();
+    return _cachedOpenVisits!;
+  }
 }

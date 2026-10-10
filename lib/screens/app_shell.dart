@@ -15,6 +15,7 @@ import 'overview_screen.dart';
 import 'records_screen.dart';
 import 'settings_screen.dart';
 import 'fees_screen.dart';
+import 'reports_screen.dart';
 import '../widgets/workspace_logo.dart';
 
 const navigation = [
@@ -28,6 +29,7 @@ const navigation = [
   ('workout_plans', 'Workouts', Icons.auto_awesome_outlined),
   ('inventory_items', 'Equipment', Icons.fitness_center_rounded),
   ('messages', 'Messages', Icons.chat_bubble_outline_rounded),
+  ('reports', 'Reports', Icons.assessment_outlined),
   ('settings', 'Settings', Icons.settings_outlined),
 ];
 
@@ -73,6 +75,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     'messages' => const MessagesScreen(),
     'settings' => const SettingsScreen(),
     'fees' => const FeesScreen(),
+    'reports' => ReportsScreen(navigate: _navigate),
     _ => RecordsScreen(key: ValueKey(_selected), table: _selected),
   };
   @override

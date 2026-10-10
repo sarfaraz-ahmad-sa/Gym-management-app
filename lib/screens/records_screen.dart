@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 
 import '../core/entities.dart';
 import '../core/format.dart';
@@ -41,7 +42,63 @@ class _RecordsScreenState extends State<RecordsScreen> {
   String _query = '', _filter = 'all';
   int _page = 0;
   bool _ascending = false;
+  Timer? _debounce;
+  List<RecordData>? _cachedRows;
+  String? _lastQuery;
+  String? _lastFilter;
+  int _dataVersion = 0; // Invalidate cache when data changes
+  
   EntitySpec get spec => entities[widget.table]!;
+  
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+  
+  List<RecordData> _filteredRows(GymStore store) {
+    // Return cached if query/filter/data unchanged
+    if (_cachedRows != null && 
+        _query == _lastQuery && 
+        _filter == _lastFilter &&
+        _dataVersion == store.loadCount) {
+      return _cachedRows!;
+    }
+    _lastQuery = _query;
+    _lastFilter = _filter;
+    _dataVersion = store.loadCount;
+    _cachedRows = store.rows(widget.table).where((r) {
+      return (_filter == 'all' || status(store, r) == _filter) &&
+          spec.fields
+              .map((f) => recordValue(store, spec, r, f.key))
+              .join(' ')
+              .toLowerCase()
+              .contains(_query.toLowerCase());
+    }).toList();
+    _cachedRows!.sort((a, b) {
+      if (widget.table == 'payments') {
+        return (b['payment_date'] as int).compareTo(a['payment_date'] as int) *
+            (_ascending ? -1 : 1);
+      }
+      final cmp = (a['name'] as String).toLowerCase().compareTo(
+        (b['name'] as String).toLowerCase(),
+      );
+      return _ascending ? cmp : -cmp;
+    });
+    return _cachedRows!;
+  }
+  
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        setState(() {
+          _query = value;
+          _cachedRows = null; // Invalidate cache
+        });
+      }
+    });
+  }
   Future<void> _edit(GymStore store, [RecordData? row]) async {
     if (await editRecord(context, store, spec, record: row) && mounted) {
       toast(context, '${titleCase(spec.singular)} saved');
@@ -126,28 +183,8 @@ class _RecordsScreenState extends State<RecordsScreen> {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<GymStore>();
-    final rows = store
-        .rows(widget.table)
-        .where(
-          (r) =>
-              (_filter == 'all' || status(store, r) == _filter) &&
-              spec.fields
-                  .map((f) => recordValue(store, spec, r, f.key))
-                  .join(' ')
-                  .toLowerCase()
-                  .contains(_query.toLowerCase()),
-        )
-        .toList();
-    rows.sort((a, b) {
-      if (widget.table == 'payments') {
-        return (b['payment_date'] as int).compareTo(a['payment_date'] as int) *
-            (_ascending ? -1 : 1);
-      }
-      final cmp = (a['name'] as String).toLowerCase().compareTo(
-        (b['name'] as String).toLowerCase(),
-      );
-      return _ascending ? cmp : -cmp;
-    });
+    // Use cached filtering
+    final rows = _filteredRows(store);
     final grid = [
       'membership_plans',
       'workout_plans',
@@ -234,10 +271,10 @@ class _RecordsScreenState extends State<RecordsScreen> {
                           vertical: 12,
                         ),
                       ),
-                      onChanged: (v) => setState(() {
-                        _query = v;
+                      onChanged: (v) {
+                        _onSearchChanged(v);
                         _page = 0;
-                      }),
+                      },
                     ),
                   ),
                   OutlinedButton.icon(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 
 import '../core/format.dart';
 import '../core/gym_store.dart';
@@ -17,6 +18,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   String _query = '', _filter = 'today';
   DateTime? _date;
   int _limit = 30;
+  Timer? _debounce;
+  List<RecordData>? _cachedRows;
+  String? _lastQuery;
+  String? _lastFilter;
+  int _dataVersion = 0;
+  
   Future<void> _act(Future<void> Function() action, String message) async {
     try {
       await action();
@@ -27,24 +34,46 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  List<RecordData> _filteredRows(GymStore store) {
+    final today = store.calendar.today;
+    if (_cachedRows != null &&
+        _query == _lastQuery &&
+        _filter == _lastFilter &&
+        _dataVersion == store.loadCount) {
+      return _cachedRows!;
+    }
+    _lastQuery = _query;
+    _lastFilter = _filter;
+    _dataVersion = store.loadCount;
+    _cachedRows = store.rows('attendance').where((r) {
+      final date = store.calendar.day(
+        store.calendar.fromTimestamp(r['check_in'])!,
+      );
+      return (_filter != 'today' || date == today) &&
+          (_filter != 'inside' || r['check_out'] == null) &&
+          (_date == null || date == _date) &&
+          store
+              .label('members', r['member_id'])
+              .toLowerCase()
+              .contains(_query.toLowerCase());
+    }).toList()
+      ..sort(
+        (a, b) => (b['check_in'] as int).compareTo(a['check_in'] as int),
+      );
+    return _cachedRows!;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final store = context.watch<GymStore>();
     final today = store.calendar.today;
-    final rows =
-        store.rows('attendance').where((r) {
-          final date = store.calendar.day(
-            store.calendar.fromTimestamp(r['check_in'])!,
-          );
-          return (_filter != 'today' || date == today) &&
-              (_filter != 'inside' || r['check_out'] == null) &&
-              (_date == null || date == _date) &&
-              store
-                  .label('members', r['member_id'])
-                  .toLowerCase()
-                  .contains(_query.toLowerCase());
-        }).toList()..sort(
-          (a, b) => (b['check_in'] as int).compareTo(a['check_in'] as int),
-        );
+    // Use cached filtering
+    final rows = _filteredRows(store);
     final todayCount = store
         .rows('attendance')
         .where(

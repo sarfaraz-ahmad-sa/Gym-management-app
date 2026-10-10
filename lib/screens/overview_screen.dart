@@ -29,7 +29,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
     final scheme = Theme.of(context).colorScheme;
     final now = store.calendar.instant(DateTime.now());
     final today = store.calendar.today;
-    final analytics = DashboardAnalytics(store, now: now, days: _days);
+    // Use cached analytics instead of creating new instance each rebuild
+    final analytics = store.analytics(days: _days);
     final active = analytics.activeMembers;
     final currentRevenue = analytics.revenue;
     final previousRevenue = analytics.previousRevenue;
@@ -150,6 +151,15 @@ class _OverviewScreenState extends State<OverviewScreen> {
                     onPressed: () => widget.navigate('fees'),
                     icon: const Icon(Icons.receipt_long_outlined, size: 18),
                     label: const Text('Review dues'),
+                  ),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF9334E6),
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => widget.navigate('reports'),
+                    icon: const Icon(Icons.assessment_outlined, size: 18),
+                    label: const Text('Reports'),
                   ),
                 ],
               ),
